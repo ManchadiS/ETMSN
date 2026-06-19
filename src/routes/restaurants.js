@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { store, createRestaurant, getRestaurant, updateRestaurant, deleteRestaurant } = require('../models/store');
+const { listRestaurants, createRestaurant, getRestaurant, updateRestaurant, deleteRestaurant } = require('../models/store');
 
-router.get('/', (req, res) => {
-  res.json(store.restaurants);
+router.get('/', async (req, res) => {
+  const list = await listRestaurants();
+  res.json(list);
 });
 
 router.get('/:id', async (req, res) => {

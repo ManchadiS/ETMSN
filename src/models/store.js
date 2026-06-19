@@ -1,9 +1,58 @@
-// Simple store with optional SQLite persistence via knex
+// Simple store with optional MongoDB persistence via mongoose
 const { v4: uuidv4 } = require('uuid');
 const useDb = process.env.USE_DB === 'true';
-let knex;
+
+let Restaurant, FoodItem, Expense, Billing;
+
 if (useDb) {
-  knex = require('../db/knex');
+  const mongoose = require('mongoose');
+  const { connect } = require('../db/mongodb');
+
+  connect().catch(err => {
+    console.error('MongoDB Connection Error:', err);
+  });
+
+  // Define Mongoose Schemas
+  const RestaurantSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    name: { type: String, required: true },
+    address: { type: String }
+  }, { timestamps: true });
+
+  const FoodItemSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    name: { type: String, required: true },
+    price: { type: Number, required: true },
+    description: { type: String },
+    category: { type: String }
+  }, { timestamps: true });
+
+  const ExpenseSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    amount: { type: Number, required: true },
+    description: { type: String },
+    date: { type: String },
+    category: { type: String }
+  }, { timestamps: true });
+
+  const BillingSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    amount: { type: Number, required: true },
+    restaurantId: { type: String },
+    date: { type: String },
+    description: { type: String },
+    status: { type: String, default: 'pending' },
+    mobile: { type: String },
+    emailId: { type: String },
+    cgst: { type: Number, default: 0 },
+    sgst: { type: Number, default: 0 },
+    foodItems: { type: Array, default: [] }
+  }, { timestamps: true });
+
+  Restaurant = mongoose.model('Restaurant', RestaurantSchema);
+  FoodItem = mongoose.model('FoodItem', FoodItemSchema);
+  Expense = mongoose.model('Expense', ExpenseSchema);
+  Billing = mongoose.model('Billing', BillingSchema);
 }
 
 const store = {
@@ -15,30 +64,30 @@ const store = {
 
 async function listFoodItems() {
   if (useDb) {
-    const rows = await knex('food_items').select('*');
-    return rows.map(r => ({ id: r.uuid, name: r.name, price: r.price, description: r.description, category: r.category }));
+    const items = await FoodItem.find({});
+    return items.map(r => ({ id: r.id, name: r.name, price: r.price, description: r.description, category: r.category }));
   }
   return store.foodItems || [];
 }
 
 async function createFoodItem(data) {
-  const payload = { uuid: uuidv4(), name: data.name, price: data.price, description: data.description || null, category: data.category || null };
+  const id = uuidv4();
   if (useDb) {
-    const ids = await knex('food_items').insert(payload);
-    const row = await knex('food_items').where({ id: ids[0] }).first();
-    return { id: row.uuid, name: row.name, price: row.price, description: row.description, category: row.category };
+    const item = new FoodItem({ id, name: data.name, price: data.price, description: data.description || null, category: data.category || null });
+    await item.save();
+    return { id: item.id, name: item.name, price: item.price, description: item.description, category: item.category };
   }
   if (!store.foodItems) store.foodItems = [];
-  const item = { id: payload.uuid, name: payload.name, price: payload.price, description: payload.description, category: payload.category };
+  const item = { id, name: data.name, price: data.price, description: data.description || null, category: data.category || null };
   store.foodItems.push(item);
   return item;
 }
 
 async function getFoodItem(id) {
   if (useDb) {
-    const row = await knex('food_items').where({ uuid: id }).first();
-    if (!row) return null;
-    return { id: row.uuid, name: row.name, price: row.price, description: row.description, category: row.category };
+    const item = await FoodItem.findOne({ id });
+    if (!item) return null;
+    return { id: item.id, name: item.name, price: item.price, description: item.description, category: item.category };
   }
   if (!store.foodItems) store.foodItems = [];
   return store.foodItems.find(f => f.id === id) || null;
@@ -46,11 +95,14 @@ async function getFoodItem(id) {
 
 async function updateFoodItem(id, data) {
   if (useDb) {
-    const row = await knex('food_items').where({ uuid: id }).first();
-    if (!row) return null;
-    await knex('food_items').where({ uuid: id }).update({ name: data.name || row.name, price: data.price || row.price, description: data.description || row.description, category: data.category || row.category });
-    const updated = await knex('food_items').where({ uuid: id }).first();
-    return { id: updated.uuid, name: updated.name, price: updated.price, description: updated.description, category: updated.category };
+    const item = await FoodItem.findOne({ id });
+    if (!item) return null;
+    if (data.name !== undefined) item.name = data.name;
+    if (data.price !== undefined) item.price = data.price;
+    if (data.description !== undefined) item.description = data.description;
+    if (data.category !== undefined) item.category = data.category;
+    await item.save();
+    return { id: item.id, name: item.name, price: item.price, description: item.description, category: item.category };
   }
   if (!store.foodItems) store.foodItems = [];
   const idx = store.foodItems.findIndex(f => f.id === id);
@@ -61,10 +113,8 @@ async function updateFoodItem(id, data) {
 
 async function deleteFoodItem(id) {
   if (useDb) {
-    const row = await knex('food_items').where({ uuid: id }).first();
-    if (!row) return false;
-    await knex('food_items').where({ uuid: id }).del();
-    return true;
+    const res = await FoodItem.deleteOne({ id });
+    return res.deletedCount > 0;
   }
   if (!store.foodItems) store.foodItems = [];
   const idx = store.foodItems.findIndex(f => f.id === id);
@@ -75,30 +125,42 @@ async function deleteFoodItem(id) {
 
 async function listBillings() {
   if (useDb) {
-    const rows = await knex('billings').select('*');
-    return rows.map(r => ({ id: r.uuid, amount: r.amount, restaurantId: r.restaurant_id, date: r.date, description: r.description, status: r.status, mobile: r.mobile, emailId: r.email_id, cgst: r.cgst, sgst: r.sgst, foodItems: r.food_items ? JSON.parse(r.food_items) : [] }));
+    const rows = await Billing.find({});
+    return rows.map(r => ({ id: r.id, amount: r.amount, restaurantId: r.restaurantId, date: r.date, description: r.description, status: r.status, mobile: r.mobile, emailId: r.emailId, cgst: r.cgst, sgst: r.sgst, foodItems: r.foodItems || [] }));
   }
   return store.billings || [];
 }
 
 async function createBilling(data) {
-  const payload = { uuid: uuidv4(), amount: data.amount, restaurant_id: data.restaurantId || null, date: data.date || null, description: data.description || null, status: data.status || 'pending', mobile: data.mobile || null, email_id: data.emailId || null, cgst: data.cgst || 0, sgst: data.sgst || 0, food_items: data.foodItems ? JSON.stringify(data.foodItems) : null };
+  const id = uuidv4();
   if (useDb) {
-    const ids = await knex('billings').insert(payload);
-    const row = await knex('billings').where({ id: ids[0] }).first();
-    return { id: row.uuid, amount: row.amount, restaurantId: row.restaurant_id, date: row.date, description: row.description, status: row.status, mobile: row.mobile, emailId: row.email_id, cgst: row.cgst, sgst: row.sgst, foodItems: row.food_items ? JSON.parse(row.food_items) : [] };
+    const billing = new Billing({
+      id,
+      amount: data.amount,
+      restaurantId: data.restaurantId || null,
+      date: data.date || null,
+      description: data.description || null,
+      status: data.status || 'pending',
+      mobile: data.mobile || null,
+      emailId: data.emailId || null,
+      cgst: data.cgst || 0,
+      sgst: data.sgst || 0,
+      foodItems: data.foodItems || []
+    });
+    await billing.save();
+    return { id: billing.id, amount: billing.amount, restaurantId: billing.restaurantId, date: billing.date, description: billing.description, status: billing.status, mobile: billing.mobile, emailId: billing.emailId, cgst: billing.cgst, sgst: billing.sgst, foodItems: billing.foodItems };
   }
   if (!store.billings) store.billings = [];
-  const billing = { id: payload.uuid, amount: payload.amount, restaurantId: payload.restaurant_id, date: payload.date, description: payload.description, status: payload.status, mobile: payload.mobile, emailId: payload.email_id, cgst: payload.cgst, sgst: payload.sgst, foodItems: data.foodItems || [] };
+  const billing = { id, amount: data.amount, restaurantId: data.restaurantId || null, date: data.date || null, description: data.description || null, status: data.status || 'pending', mobile: data.mobile || null, emailId: data.emailId || null, cgst: data.cgst || 0, sgst: data.sgst || 0, foodItems: data.foodItems || [] };
   store.billings.push(billing);
   return billing;
 }
 
 async function getBilling(id) {
   if (useDb) {
-    const row = await knex('billings').where({ uuid: id }).first();
+    const row = await Billing.findOne({ id });
     if (!row) return null;
-    return { id: row.uuid, amount: row.amount, restaurantId: row.restaurant_id, date: row.date, description: row.description, status: row.status, mobile: row.mobile, emailId: row.email_id, cgst: row.cgst, sgst: row.sgst, foodItems: row.food_items ? JSON.parse(row.food_items) : [] };
+    return { id: row.id, amount: row.amount, restaurantId: row.restaurantId, date: row.date, description: row.description, status: row.status, mobile: row.mobile, emailId: row.emailId, cgst: row.cgst, sgst: row.sgst, foodItems: row.foodItems || [] };
   }
   if (!store.billings) store.billings = [];
   return store.billings.find(b => b.id === id) || null;
@@ -106,23 +168,20 @@ async function getBilling(id) {
 
 async function updateBilling(id, data) {
   if (useDb) {
-    const row = await knex('billings').where({ uuid: id }).first();
+    const row = await Billing.findOne({ id });
     if (!row) return null;
-    const updateData = {
-      amount: data.amount || row.amount,
-      restaurant_id: data.restaurantId !== undefined ? data.restaurantId : row.restaurant_id,
-      date: data.date || row.date,
-      description: data.description || row.description,
-      status: data.status || row.status,
-      mobile: data.mobile !== undefined ? data.mobile : row.mobile,
-      email_id: data.emailId !== undefined ? data.emailId : row.email_id,
-      cgst: data.cgst !== undefined ? data.cgst : row.cgst,
-      sgst: data.sgst !== undefined ? data.sgst : row.sgst,
-      food_items: data.foodItems ? JSON.stringify(data.foodItems) : row.food_items
-    };
-    await knex('billings').where({ uuid: id }).update(updateData);
-    const updated = await knex('billings').where({ uuid: id }).first();
-    return { id: updated.uuid, amount: updated.amount, restaurantId: updated.restaurant_id, date: updated.date, description: updated.description, status: updated.status, mobile: updated.mobile, emailId: updated.email_id, cgst: updated.cgst, sgst: updated.sgst, foodItems: updated.food_items ? JSON.parse(updated.food_items) : [] };
+    if (data.amount !== undefined) row.amount = data.amount;
+    if (data.restaurantId !== undefined) row.restaurantId = data.restaurantId;
+    if (data.date !== undefined) row.date = data.date;
+    if (data.description !== undefined) row.description = data.description;
+    if (data.status !== undefined) row.status = data.status;
+    if (data.mobile !== undefined) row.mobile = data.mobile;
+    if (data.emailId !== undefined) row.emailId = data.emailId;
+    if (data.cgst !== undefined) row.cgst = data.cgst;
+    if (data.sgst !== undefined) row.sgst = data.sgst;
+    if (data.foodItems !== undefined) row.foodItems = data.foodItems;
+    await row.save();
+    return { id: row.id, amount: row.amount, restaurantId: row.restaurantId, date: row.date, description: row.description, status: row.status, mobile: row.mobile, emailId: row.emailId, cgst: row.cgst, sgst: row.sgst, foodItems: row.foodItems || [] };
   }
   if (!store.billings) store.billings = [];
   const idx = store.billings.findIndex(b => b.id === id);
@@ -133,10 +192,8 @@ async function updateBilling(id, data) {
 
 async function deleteBilling(id) {
   if (useDb) {
-    const row = await knex('billings').where({ uuid: id }).first();
-    if (!row) return false;
-    await knex('billings').where({ uuid: id }).del();
-    return true;
+    const res = await Billing.deleteOne({ id });
+    return res.deletedCount > 0;
   }
   if (!store.billings) store.billings = [];
   const idx = store.billings.findIndex(b => b.id === id);
@@ -147,41 +204,47 @@ async function deleteBilling(id) {
 
 async function listExpenses() {
   if (useDb) {
-    const rows = await knex('expenses').select('*');
-    return rows.map(r => ({ id: r.uuid, amount: r.amount, description: r.description, date: r.date, category: r.category }));
+    const rows = await Expense.find({});
+    return rows.map(r => ({ id: r.id, amount: r.amount, description: r.description, date: r.date, category: r.category }));
   }
-  return store.expenses;
+  return store.expenses || [];
 }
 
 async function createExpense(data) {
-  const payload = { uuid: uuidv4(), amount: data.amount, description: data.description || null, date: data.date || null, category: data.category || null };
+  const id = uuidv4();
   if (useDb) {
-    const ids = await knex('expenses').insert(payload);
-    const row = await knex('expenses').where({ id: ids[0] }).first();
-    return { id: row.uuid, amount: row.amount, description: row.description, date: row.date, category: row.category };
+    const expense = new Expense({ id, amount: data.amount, description: data.description || null, date: data.date || null, category: data.category || null });
+    await expense.save();
+    return { id: expense.id, amount: expense.amount, description: expense.description, date: expense.date, category: expense.category };
   }
-  const expense = { id: payload.uuid, amount: payload.amount, description: payload.description, date: payload.date, category: payload.category };
+  if (!store.expenses) store.expenses = [];
+  const expense = { id, amount: data.amount, description: data.description || null, date: data.date || null, category: data.category || null };
   store.expenses.push(expense);
   return expense;
 }
 
 async function getExpense(id) {
   if (useDb) {
-    const row = await knex('expenses').where({ uuid: id }).first();
+    const row = await Expense.findOne({ id });
     if (!row) return null;
-    return { id: row.uuid, amount: row.amount, description: row.description, date: row.date, category: row.category };
+    return { id: row.id, amount: row.amount, description: row.description, date: row.date, category: row.category };
   }
+  if (!store.expenses) store.expenses = [];
   return store.expenses.find(e => e.id === id) || null;
 }
 
 async function updateExpense(id, data) {
   if (useDb) {
-    const row = await knex('expenses').where({ uuid: id }).first();
+    const row = await Expense.findOne({ id });
     if (!row) return null;
-    await knex('expenses').where({ uuid: id }).update({ amount: data.amount || row.amount, description: data.description || row.description, date: data.date || row.date, category: data.category || row.category });
-    const updated = await knex('expenses').where({ uuid: id }).first();
-    return { id: updated.uuid, amount: updated.amount, description: updated.description, date: updated.date, category: updated.category };
+    if (data.amount !== undefined) row.amount = data.amount;
+    if (data.description !== undefined) row.description = data.description;
+    if (data.date !== undefined) row.date = data.date;
+    if (data.category !== undefined) row.category = data.category;
+    await row.save();
+    return { id: row.id, amount: row.amount, description: row.description, date: row.date, category: row.category };
   }
+  if (!store.expenses) store.expenses = [];
   const idx = store.expenses.findIndex(e => e.id === id);
   if (idx === -1) return null;
   store.expenses[idx] = { ...store.expenses[idx], ...data };
@@ -190,46 +253,57 @@ async function updateExpense(id, data) {
 
 async function deleteExpense(id) {
   if (useDb) {
-    const row = await knex('expenses').where({ uuid: id }).first();
-    if (!row) return false;
-    await knex('expenses').where({ uuid: id }).del();
-    return true;
+    const res = await Expense.deleteOne({ id });
+    return res.deletedCount > 0;
   }
+  if (!store.expenses) store.expenses = [];
   const idx = store.expenses.findIndex(e => e.id === id);
   if (idx === -1) return false;
   store.expenses.splice(idx, 1);
   return true;
 }
 
-async function createRestaurant(data) {
-  const payload = { uuid: uuidv4(), name: data.name, address: data.address || null };
+async function listRestaurants() {
   if (useDb) {
-    const ids = await knex('restaurants').insert(payload);
-    const row = await knex('restaurants').where({ id: ids[0] }).first();
-    return { id: row.uuid, name: row.name, address: row.address };
+    const rows = await Restaurant.find({});
+    return rows.map(r => ({ id: r.id, name: r.name, address: r.address }));
   }
-  const restaurant = { id: payload.uuid, ...data };
+  return store.restaurants || [];
+}
+
+async function createRestaurant(data) {
+  const id = uuidv4();
+  if (useDb) {
+    const restaurant = new Restaurant({ id, name: data.name, address: data.address || null });
+    await restaurant.save();
+    return { id: restaurant.id, name: restaurant.name, address: restaurant.address };
+  }
+  if (!store.restaurants) store.restaurants = [];
+  const restaurant = { id, name: data.name, address: data.address || null };
   store.restaurants.push(restaurant);
   return restaurant;
 }
 
 async function getRestaurant(id) {
   if (useDb) {
-    const row = await knex('restaurants').where({ uuid: id }).first();
+    const row = await Restaurant.findOne({ id });
     if (!row) return null;
-    return { id: row.uuid, name: row.name, address: row.address };
+    return { id: row.id, name: row.name, address: row.address };
   }
-  return store.restaurants.find(h => h.id === id);
+  if (!store.restaurants) store.restaurants = [];
+  return store.restaurants.find(h => h.id === id) || null;
 }
 
 async function updateRestaurant(id, data) {
   if (useDb) {
-    const row = await knex('restaurants').where({ uuid: id }).first();
+    const row = await Restaurant.findOne({ id });
     if (!row) return null;
-    await knex('restaurants').where({ uuid: id }).update({ name: data.name || row.name, address: data.address || row.address });
-    const updated = await knex('restaurants').where({ uuid: id }).first();
-    return { id: updated.uuid, name: updated.name, address: updated.address };
+    if (data.name !== undefined) row.name = data.name;
+    if (data.address !== undefined) row.address = data.address;
+    await row.save();
+    return { id: row.id, name: row.name, address: row.address };
   }
+  if (!store.restaurants) store.restaurants = [];
   const idx = store.restaurants.findIndex(h => h.id === id);
   if (idx === -1) return null;
   store.restaurants[idx] = { ...store.restaurants[idx], ...data };
@@ -238,11 +312,10 @@ async function updateRestaurant(id, data) {
 
 async function deleteRestaurant(id) {
   if (useDb) {
-    const row = await knex('restaurants').where({ uuid: id }).first();
-    if (!row) return false;
-    await knex('restaurants').where({ uuid: id }).del();
-    return true;
+    const res = await Restaurant.deleteOne({ id });
+    return res.deletedCount > 0;
   }
+  if (!store.restaurants) store.restaurants = [];
   const idx = store.restaurants.findIndex(h => h.id === id);
   if (idx === -1) return false;
   store.restaurants.splice(idx, 1);
@@ -251,21 +324,22 @@ async function deleteRestaurant(id) {
 
 module.exports = {
   store,
+  listRestaurants,
   createRestaurant,
   getRestaurant,
   updateRestaurant,
-  deleteRestaurant
-  ,listExpenses,
+  deleteRestaurant,
+  listExpenses,
   createExpense,
   getExpense,
   updateExpense,
-  deleteExpense
-  ,listBillings,
+  deleteExpense,
+  listBillings,
   createBilling,
   getBilling,
   updateBilling,
-  deleteBilling
-  ,listFoodItems,
+  deleteBilling,
+  listFoodItems,
   createFoodItem,
   getFoodItem,
   updateFoodItem,
