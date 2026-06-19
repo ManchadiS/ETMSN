@@ -15,9 +15,9 @@ function initializeTransporter() {
     return null;
   }
 
-  const emailService = process.env.EMAIL_SERVICE || 'gmail';
-  const emailUser = process.env.EMAIL_USER;
-  const emailPassword = process.env.EMAIL_PASSWORD;
+  const emailService = (process.env.EMAIL_SERVICE || 'gmail').toLowerCase();
+  const emailUser = (process.env.EMAIL_USER || '').trim();
+  const emailPassword = (process.env.EMAIL_PASSWORD || '').replace(/\s/g, '');
 
   if (!emailUser || !emailPassword) {
     console.warn('⚠️  Email credentials not configured in .env file');
@@ -25,17 +25,28 @@ function initializeTransporter() {
     return null;
   }
 
+  const auth = { user: emailUser, pass: emailPassword };
+
   if (emailService === 'gmail') {
+    transporter = nodemailer.createTransport({ service: 'gmail', auth });
+  } else if (emailService === 'outlook' || emailService === 'hotmail') {
     transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: emailUser, pass: emailPassword }
+      service: 'hotmail',
+      auth
     });
   } else {
+    const smtpHost = process.env.SMTP_HOST;
+    if (!smtpHost) {
+      console.warn('⚠️  SMTP_HOST is required for custom email service');
+      console.warn('   Emails will be logged to console only');
+      return null;
+    }
+
     transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT || 587,
+      host: smtpHost,
+      port: Number(process.env.SMTP_PORT) || 587,
       secure: process.env.SMTP_SECURE === 'true',
-      auth: { user: emailUser, pass: emailPassword }
+      auth
     });
   }
 
@@ -205,17 +216,14 @@ async function sendBill(billing, restaurant, emailId) {
       const pdfBuffer = await createBillPdf(billing, restaurant);
       // Send actual email via nodemailer with PDF attachment
       const mailResult = await transporter.sendMail({
-        from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+        from: (process.env.EMAIL_FROM || process.env.EMAIL_USER || '').trim(),
         to: emailId,
         subject: emailRecord.subject,
-        text: bill,
-        html: `<pre>${bill.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`,
         attachments: [
           {
             filename: `bill-${billing.id || 'receipt'}.pdf`,
             content: pdfBuffer,
-            contentType: 'application/pdf',
-            contentDisposition: 'attachment'
+            contentType: 'application/pdf'
           }
         ]
       });
@@ -228,7 +236,7 @@ async function sendBill(billing, restaurant, emailId) {
       const pdfBuffer = await createBillPdf(billing, restaurant);
       // Attach the PDF to the log so tests can verify existence
       emailRecord.attachment = { filename: `bill-${billing.id || 'receipt'}.pdf`, size: pdfBuffer.length };
-      console.log(`\n📧 Bill logged (email not sent):\n${bill}`);
+      console.log(`\n📧 Bill PDF generated (email not sent) for: ${emailId}`);
       emailRecord.status = 'logged';
     }
   } catch (err) {

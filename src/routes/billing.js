@@ -19,17 +19,22 @@ router.post('/', async (req, res) => {
   if (amount == null) return res.status(400).json({ error: 'amount is required' });
   
   const created = await createBilling({ amount, restaurantId, date, description, status, mobile, emailId, cgst, sgst, foodItems });
-  
-  // Send email if emailId is provided
+
   if (emailId) {
     try {
       const restaurant = restaurantId ? await getRestaurant(restaurantId) : null;
-      await sendBill(created, restaurant, emailId);
+      const emailResult = await sendBill(created, restaurant, emailId);
+      created.emailStatus = emailResult.record.status;
+      if (!emailResult.success) {
+        created.emailError = emailResult.record.error || 'Email delivery failed';
+      }
     } catch (err) {
       console.error('Email send error:', err);
+      created.emailStatus = 'failed';
+      created.emailError = err.message;
     }
   }
-  
+
   res.status(201).json(created);
 });
 
