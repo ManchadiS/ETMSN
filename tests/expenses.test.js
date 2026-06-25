@@ -3,9 +3,21 @@ const app = require('../src/app');
 
 describe('Expenses API', () => {
   let created;
+  let restaurantId;
+
+  beforeAll(async () => {
+    const res = await request(app).post('/restaurants').send({ name: 'Expenses Test Restaurant', address: '123 Main St' });
+    restaurantId = res.body.id;
+  });
+
+  afterAll(async () => {
+    if (restaurantId) {
+      await request(app).delete(`/restaurants/${restaurantId}`);
+    }
+  });
 
   test('POST /expenses should create an expense', async () => {
-    const res = await request(app).post('/expenses').send({ amount: 12.5, description: 'Lunch', date: '2026-06-19', category: 'food' });
+    const res = await request(app).post('/expenses').send({ amount: 12.5, description: 'Lunch', date: '2026-06-19', category: 'food', restaurantId });
     expect(res.statusCode).toBe(201);
     expect(res.body).toHaveProperty('id');
     expect(res.body.amount).toBeCloseTo(12.5);

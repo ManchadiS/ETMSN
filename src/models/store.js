@@ -2,7 +2,7 @@
 const { v4: uuidv4 } = require('uuid');
 const useDb = process.env.USE_DB === 'true';
 
-let Restaurant, FoodItem, Expense, Billing;
+let Restaurant, FoodItem, Expense, Billing, User;
 
 if (useDb) {
   const mongoose = require('mongoose');
@@ -17,28 +17,30 @@ if (useDb) {
     id: { type: String, required: true, unique: true },
     name: { type: String, required: true },
     address: { type: String }
-  }, { timestamps: true });
+  }, { timestamps: true, id: false });
 
   const FoodItemSchema = new mongoose.Schema({
     id: { type: String, required: true, unique: true },
+    restaurantId: { type: String, required: true },
     name: { type: String, required: true },
     price: { type: Number, required: true },
     description: { type: String },
     category: { type: String }
-  }, { timestamps: true });
+  }, { timestamps: true, id: false });
 
   const ExpenseSchema = new mongoose.Schema({
     id: { type: String, required: true, unique: true },
+    restaurantId: { type: String, required: true },
     amount: { type: Number, required: true },
     description: { type: String },
     date: { type: String },
     category: { type: String }
-  }, { timestamps: true });
+  }, { timestamps: true, id: false });
 
   const BillingSchema = new mongoose.Schema({
     id: { type: String, required: true, unique: true },
     amount: { type: Number, required: true },
-    restaurantId: { type: String },
+    restaurantId: { type: String, required: true },
     date: { type: String },
     description: { type: String },
     status: { type: String, default: 'pending' },
@@ -47,38 +49,65 @@ if (useDb) {
     cgst: { type: Number, default: 0 },
     sgst: { type: Number, default: 0 },
     foodItems: { type: Array, default: [] }
-  }, { timestamps: true });
+  }, { timestamps: true, id: false });
+
+  const UserSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    firstName: { type: String, required: true },
+    lastName: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    dob: { type: String, required: true },
+    age: { type: Number, required: true }
+  }, { timestamps: true, id: false });
 
   Restaurant = mongoose.model('Restaurant', RestaurantSchema);
   FoodItem = mongoose.model('FoodItem', FoodItemSchema);
   Expense = mongoose.model('Expense', ExpenseSchema);
   Billing = mongoose.model('Billing', BillingSchema);
+  User = mongoose.model('User', UserSchema);
 }
 
 const store = {
   restaurants: [],
   rooms: [],
   bookings: [],
-  expenses: []
+  expenses: [],
+  users: []
 };
 
-async function listFoodItems() {
+async function listFoodItems(restaurantId) {
   if (useDb) {
-    const items = await FoodItem.find({});
-    return items.map(r => ({ id: r.id, name: r.name, price: r.price, description: r.description, category: r.category }));
+    const query = restaurantId ? { restaurantId } : {};
+    const items = await FoodItem.find(query);
+    return items.map(r => ({ id: r.id, restaurantId: r.restaurantId, name: r.name, price: r.price, description: r.description, category: r.category }));
   }
-  return store.foodItems || [];
+  return (store.foodItems || []).filter(f => !restaurantId || f.restaurantId === restaurantId);
 }
 
 async function createFoodItem(data) {
   const id = uuidv4();
   if (useDb) {
-    const item = new FoodItem({ id, name: data.name, price: data.price, description: data.description || null, category: data.category || null });
+    const item = new FoodItem({
+      id,
+      restaurantId: data.restaurantId,
+      name: data.name,
+      price: data.price,
+      description: data.description || null,
+      category: data.category || null
+    });
     await item.save();
-    return { id: item.id, name: item.name, price: item.price, description: item.description, category: item.category };
+    return { id: item.id, restaurantId: item.restaurantId, name: item.name, price: item.price, description: item.description, category: item.category };
   }
   if (!store.foodItems) store.foodItems = [];
-  const item = { id, name: data.name, price: data.price, description: data.description || null, category: data.category || null };
+  const item = {
+    id,
+    restaurantId: data.restaurantId,
+    name: data.name,
+    price: data.price,
+    description: data.description || null,
+    category: data.category || null
+  };
   store.foodItems.push(item);
   return item;
 }
@@ -87,7 +116,7 @@ async function getFoodItem(id) {
   if (useDb) {
     const item = await FoodItem.findOne({ id });
     if (!item) return null;
-    return { id: item.id, name: item.name, price: item.price, description: item.description, category: item.category };
+    return { id: item.id, restaurantId: item.restaurantId, name: item.name, price: item.price, description: item.description, category: item.category };
   }
   if (!store.foodItems) store.foodItems = [];
   return store.foodItems.find(f => f.id === id) || null;
@@ -101,8 +130,9 @@ async function updateFoodItem(id, data) {
     if (data.price !== undefined) item.price = data.price;
     if (data.description !== undefined) item.description = data.description;
     if (data.category !== undefined) item.category = data.category;
+    if (data.restaurantId !== undefined) item.restaurantId = data.restaurantId;
     await item.save();
-    return { id: item.id, name: item.name, price: item.price, description: item.description, category: item.category };
+    return { id: item.id, restaurantId: item.restaurantId, name: item.name, price: item.price, description: item.description, category: item.category };
   }
   if (!store.foodItems) store.foodItems = [];
   const idx = store.foodItems.findIndex(f => f.id === id);
@@ -123,12 +153,13 @@ async function deleteFoodItem(id) {
   return true;
 }
 
-async function listBillings() {
+async function listBillings(restaurantId) {
   if (useDb) {
-    const rows = await Billing.find({});
+    const query = restaurantId ? { restaurantId } : {};
+    const rows = await Billing.find(query);
     return rows.map(r => ({ id: r.id, amount: r.amount, restaurantId: r.restaurantId, date: r.date, description: r.description, status: r.status, mobile: r.mobile, emailId: r.emailId, cgst: r.cgst, sgst: r.sgst, foodItems: r.foodItems || [] }));
   }
-  return store.billings || [];
+  return (store.billings || []).filter(b => !restaurantId || b.restaurantId === restaurantId);
 }
 
 async function createBilling(data) {
@@ -202,23 +233,38 @@ async function deleteBilling(id) {
   return true;
 }
 
-async function listExpenses() {
+async function listExpenses(restaurantId) {
   if (useDb) {
-    const rows = await Expense.find({});
-    return rows.map(r => ({ id: r.id, amount: r.amount, description: r.description, date: r.date, category: r.category }));
+    const query = restaurantId ? { restaurantId } : {};
+    const rows = await Expense.find(query);
+    return rows.map(r => ({ id: r.id, restaurantId: r.restaurantId, amount: r.amount, description: r.description, date: r.date, category: r.category }));
   }
-  return store.expenses || [];
+  return (store.expenses || []).filter(e => !restaurantId || e.restaurantId === restaurantId);
 }
 
 async function createExpense(data) {
   const id = uuidv4();
   if (useDb) {
-    const expense = new Expense({ id, amount: data.amount, description: data.description || null, date: data.date || null, category: data.category || null });
+    const expense = new Expense({
+      id,
+      restaurantId: data.restaurantId,
+      amount: data.amount,
+      description: data.description || null,
+      date: data.date || null,
+      category: data.category || null
+    });
     await expense.save();
-    return { id: expense.id, amount: expense.amount, description: expense.description, date: expense.date, category: expense.category };
+    return { id: expense.id, restaurantId: expense.restaurantId, amount: expense.amount, description: expense.description, date: expense.date, category: expense.category };
   }
   if (!store.expenses) store.expenses = [];
-  const expense = { id, amount: data.amount, description: data.description || null, date: data.date || null, category: data.category || null };
+  const expense = {
+    id,
+    restaurantId: data.restaurantId,
+    amount: data.amount,
+    description: data.description || null,
+    date: data.date || null,
+    category: data.category || null
+  };
   store.expenses.push(expense);
   return expense;
 }
@@ -227,7 +273,7 @@ async function getExpense(id) {
   if (useDb) {
     const row = await Expense.findOne({ id });
     if (!row) return null;
-    return { id: row.id, amount: row.amount, description: row.description, date: row.date, category: row.category };
+    return { id: row.id, restaurantId: row.restaurantId, amount: row.amount, description: row.description, date: row.date, category: row.category };
   }
   if (!store.expenses) store.expenses = [];
   return store.expenses.find(e => e.id === id) || null;
@@ -241,8 +287,9 @@ async function updateExpense(id, data) {
     if (data.description !== undefined) row.description = data.description;
     if (data.date !== undefined) row.date = data.date;
     if (data.category !== undefined) row.category = data.category;
+    if (data.restaurantId !== undefined) row.restaurantId = data.restaurantId;
     await row.save();
-    return { id: row.id, amount: row.amount, description: row.description, date: row.date, category: row.category };
+    return { id: row.id, restaurantId: row.restaurantId, amount: row.amount, description: row.description, date: row.date, category: row.category };
   }
   if (!store.expenses) store.expenses = [];
   const idx = store.expenses.findIndex(e => e.id === id);
@@ -322,6 +369,87 @@ async function deleteRestaurant(id) {
   return true;
 }
 
+async function listUsers() {
+  if (useDb) {
+    const rows = await User.find({});
+    return rows.map(r => ({ id: r.id, firstName: r.firstName, lastName: r.lastName, email: r.email, password: r.password, dob: r.dob, age: r.age }));
+  }
+  return store.users || [];
+}
+
+async function createUser(data) {
+  const id = uuidv4();
+  if (useDb) {
+    const user = new User({
+      id,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      password: data.password,
+      dob: data.dob,
+      age: data.age
+    });
+    await user.save();
+    return { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, dob: user.dob, age: user.age };
+  }
+  if (!store.users) store.users = [];
+  const user = { id, firstName: data.firstName, lastName: data.lastName, email: data.email, password: data.password, dob: data.dob, age: data.age };
+  store.users.push(user);
+  return { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, dob: user.dob, age: user.age };
+}
+
+async function getUser(id) {
+  if (useDb) {
+    const row = await User.findOne({ id });
+    if (!row) return null;
+    return { id: row.id, firstName: row.firstName, lastName: row.lastName, email: row.email, password: row.password, dob: row.dob, age: row.age };
+  }
+  if (!store.users) store.users = [];
+  return store.users.find(u => u.id === id) || null;
+}
+
+async function getUserByEmail(email) {
+  if (useDb) {
+    const row = await User.findOne({ email });
+    if (!row) return null;
+    return { id: row.id, firstName: row.firstName, lastName: row.lastName, email: row.email, password: row.password, dob: row.dob, age: row.age };
+  }
+  if (!store.users) store.users = [];
+  return store.users.find(u => u.email === email) || null;
+}
+
+async function updateUser(id, data) {
+  if (useDb) {
+    const row = await User.findOne({ id });
+    if (!row) return null;
+    if (data.firstName !== undefined) row.firstName = data.firstName;
+    if (data.lastName !== undefined) row.lastName = data.lastName;
+    if (data.email !== undefined) row.email = data.email;
+    if (data.password !== undefined) row.password = data.password;
+    if (data.dob !== undefined) row.dob = data.dob;
+    if (data.age !== undefined) row.age = data.age;
+    await row.save();
+    return { id: row.id, firstName: row.firstName, lastName: row.lastName, email: row.email, dob: row.dob, age: row.age };
+  }
+  if (!store.users) store.users = [];
+  const idx = store.users.findIndex(u => u.id === id);
+  if (idx === -1) return null;
+  store.users[idx] = { ...store.users[idx], ...data };
+  return { id: store.users[idx].id, firstName: store.users[idx].firstName, lastName: store.users[idx].lastName, email: store.users[idx].email, dob: store.users[idx].dob, age: store.users[idx].age };
+}
+
+async function deleteUser(id) {
+  if (useDb) {
+    const res = await User.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+  if (!store.users) store.users = [];
+  const idx = store.users.findIndex(u => u.id === id);
+  if (idx === -1) return false;
+  store.users.splice(idx, 1);
+  return true;
+}
+
 module.exports = {
   store,
   listRestaurants,
@@ -343,5 +471,11 @@ module.exports = {
   createFoodItem,
   getFoodItem,
   updateFoodItem,
-  deleteFoodItem
+  deleteFoodItem,
+  listUsers,
+  createUser,
+  getUser,
+  getUserByEmail,
+  updateUser,
+  deleteUser
 };

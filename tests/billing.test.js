@@ -3,9 +3,21 @@ const app = require('../src/app');
 
 describe('Billing API', () => {
   let created;
+  let restaurantId;
+
+  beforeAll(async () => {
+    const res = await request(app).post('/restaurants').send({ name: 'Billing Test Restaurant', address: '123 Main St' });
+    restaurantId = res.body.id;
+  });
+
+  afterAll(async () => {
+    if (restaurantId) {
+      await request(app).delete(`/restaurants/${restaurantId}`);
+    }
+  });
 
   test('POST /billing should create a billing', async () => {
-    const res = await request(app).post('/billing').send({ amount: 100.0, restaurantId: null, date: '2026-06-19', description: 'Invoice', status: 'pending' });
+    const res = await request(app).post('/billing').send({ amount: 100.0, restaurantId, date: '2026-06-19', description: 'Invoice', status: 'pending' });
     expect(res.statusCode).toBe(201);
     expect(res.body).toHaveProperty('id');
     expect(res.body.amount).toBeCloseTo(100.0);
@@ -15,7 +27,7 @@ describe('Billing API', () => {
   test('POST /billing with email and food items should send bill', async () => {
     const res = await request(app).post('/billing').send({
       amount: 500.0,
-      restaurantId: null,
+      restaurantId,
       date: '2026-06-19',
       description: 'Lunch Bill',
       status: 'pending',

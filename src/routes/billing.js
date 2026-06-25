@@ -4,7 +4,7 @@ const { listBillings, createBilling, getBilling, updateBilling, deleteBilling, g
 const { sendBill } = require('../services/emailService');
 
 router.get('/', async (req, res) => {
-  const list = await listBillings();
+  const list = await listBillings(req.query.restaurantId);
   res.json(list);
 });
 
@@ -16,7 +16,9 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   const { amount, restaurantId, date, description, status, mobile, emailId, cgst, sgst, foodItems } = req.body;
-  if (amount == null) return res.status(400).json({ error: 'amount is required' });
+  if (amount == null || !restaurantId) {
+    return res.status(400).json({ error: 'amount and restaurantId are required' });
+  }
   
   const created = await createBilling({ amount, restaurantId, date, description, status, mobile, emailId, cgst, sgst, foodItems });
 

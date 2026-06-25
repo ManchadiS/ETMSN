@@ -3,9 +3,21 @@ const app = require('../src/app');
 
 describe('Food API', () => {
   let created;
+  let restaurantId;
+
+  beforeAll(async () => {
+    const res = await request(app).post('/restaurants').send({ name: 'Food Test Restaurant', address: '123 Main St' });
+    restaurantId = res.body.id;
+  });
+
+  afterAll(async () => {
+    if (restaurantId) {
+      await request(app).delete(`/restaurants/${restaurantId}`);
+    }
+  });
 
   test('POST /food should create a food item', async () => {
-    const res = await request(app).post('/food').send({ name: 'Burger', price: 8.99, description: 'Beef burger', category: 'main' });
+    const res = await request(app).post('/food').send({ name: 'Burger', price: 8.99, description: 'Beef burger', category: 'main', restaurantId });
     expect(res.statusCode).toBe(201);
     expect(res.body).toHaveProperty('id');
     expect(res.body.name).toBe('Burger');

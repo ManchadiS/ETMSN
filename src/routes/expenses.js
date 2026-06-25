@@ -3,7 +3,7 @@ const router = express.Router();
 const { listExpenses, createExpense, getExpense, updateExpense, deleteExpense } = require('../models/store');
 
 router.get('/', async (req, res) => {
-  const list = await listExpenses();
+  const list = await listExpenses(req.query.restaurantId);
   res.json(list);
 });
 
@@ -14,9 +14,11 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { amount, description, date, category } = req.body;
-  if (amount == null) return res.status(400).json({ error: 'amount is required' });
-  const created = await createExpense({ amount, description, date, category });
+  const { amount, description, date, category, restaurantId } = req.body;
+  if (amount == null || !restaurantId) {
+    return res.status(400).json({ error: 'amount and restaurantId are required' });
+  }
+  const created = await createExpense({ amount, description, date, category, restaurantId });
   res.status(201).json(created);
 });
 
