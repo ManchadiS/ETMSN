@@ -28,6 +28,7 @@ router.get('/email-status', (req, res) => {
   const emailUser = process.env.EMAIL_USER;
   const hasEmailConfig = !!emailUser && !!process.env.EMAIL_PASSWORD;
   const logs = getEmailLogs();
+  const mongoose = require('mongoose');
   
   res.json({
     configured: hasEmailConfig,
@@ -35,7 +36,9 @@ router.get('/email-status', (req, res) => {
     emailUser: emailUser ? emailUser.replace(/(.{2})(.*)(?=.{2})/, '$1***$2') : 'Not configured',
     totalSent: logs.filter(l => l.status === 'sent').length,
     totalFailed: logs.filter(l => l.status === 'failed').length,
-    totalLogs: logs.length
+    totalLogs: logs.length,
+    useDb: process.env.USE_DB === 'true',
+    dbConnected: mongoose.connection.readyState === 1
   });
 });
 

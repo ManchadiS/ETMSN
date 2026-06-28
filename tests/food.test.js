@@ -6,44 +6,44 @@ describe('Food API', () => {
   let restaurantId;
 
   beforeAll(async () => {
-    const res = await request(app).post('/restaurants').send({ name: 'Food Test Restaurant', address: '123 Main St' });
+    const res = await request(app).post('/api/v1/restaurants').send({ name: 'Food Test Restaurant', address: '123 Main St' });
     restaurantId = res.body.id;
   });
 
   afterAll(async () => {
     if (restaurantId) {
-      await request(app).delete(`/restaurants/${restaurantId}`);
+      await request(app).delete(`/api/v1/restaurants/${restaurantId}`);
     }
   });
 
-  test('POST /food should create a food item', async () => {
-    const res = await request(app).post('/food').send({ name: 'Burger', price: 8.99, description: 'Beef burger', category: 'main', restaurantId });
+  test('POST /api/v1/food should create a food item', async () => {
+    const res = await request(app).post('/api/v1/food').send({ name: 'Burger', price: 8.99, description: 'Beef burger', category: 'main', restaurantId });
     expect(res.statusCode).toBe(201);
     expect(res.body).toHaveProperty('id');
     expect(res.body.name).toBe('Burger');
     created = res.body;
   });
 
-  test('GET /food should list food items', async () => {
-    const res = await request(app).get('/food');
+  test('GET /api/v1/food should list food items', async () => {
+    const res = await request(app).get('/api/v1/food');
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  test('GET /food/:id should return the food item', async () => {
-    const res = await request(app).get(`/food/${created.id}`);
+  test('GET /api/v1/food/:id should return the food item', async () => {
+    const res = await request(app).get(`/api/v1/food/${created.id}`);
     expect(res.statusCode).toBe(200);
     expect(res.body.name).toBe('Burger');
   });
 
-  test('PUT /food/:id should update the food item', async () => {
-    const res = await request(app).put(`/food/${created.id}`).send({ price: 9.5 });
+  test('PUT /api/v1/food/:id should update the food item', async () => {
+    const res = await request(app).put(`/api/v1/food/${created.id}`).send({ price: 9.5 });
     expect(res.statusCode).toBe(200);
     expect(res.body.price).toBeCloseTo(9.5);
   });
 
-  test('DELETE /food/:id should delete the food item', async () => {
-    const res = await request(app).delete(`/food/${created.id}`);
+  test('DELETE /api/v1/food/:id should delete the food item', async () => {
+    const res = await request(app).delete(`/api/v1/food/${created.id}`);
     expect(res.statusCode).toBe(204);
   });
 });

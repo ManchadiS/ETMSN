@@ -6,44 +6,44 @@ describe('Expenses API', () => {
   let restaurantId;
 
   beforeAll(async () => {
-    const res = await request(app).post('/restaurants').send({ name: 'Expenses Test Restaurant', address: '123 Main St' });
+    const res = await request(app).post('/api/v1/restaurants').send({ name: 'Expenses Test Restaurant', address: '123 Main St' });
     restaurantId = res.body.id;
   });
 
   afterAll(async () => {
     if (restaurantId) {
-      await request(app).delete(`/restaurants/${restaurantId}`);
+      await request(app).delete(`/api/v1/restaurants/${restaurantId}`);
     }
   });
 
-  test('POST /expenses should create an expense', async () => {
-    const res = await request(app).post('/expenses').send({ amount: 12.5, description: 'Lunch', date: '2026-06-19', category: 'food', restaurantId });
+  test('POST /api/v1/expenses should create an expense', async () => {
+    const res = await request(app).post('/api/v1/expenses').send({ amount: 12.5, description: 'Lunch', date: '2026-06-19', category: 'food', restaurantId });
     expect(res.statusCode).toBe(201);
     expect(res.body).toHaveProperty('id');
     expect(res.body.amount).toBeCloseTo(12.5);
     created = res.body;
   });
 
-  test('GET /expenses should list expenses', async () => {
-    const res = await request(app).get('/expenses');
+  test('GET /api/v1/expenses should list expenses', async () => {
+    const res = await request(app).get('/api/v1/expenses');
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  test('GET /expenses/:id should return the expense', async () => {
-    const res = await request(app).get(`/expenses/${created.id}`);
+  test('GET /api/v1/expenses/:id should return the expense', async () => {
+    const res = await request(app).get(`/api/v1/expenses/${created.id}`);
     expect(res.statusCode).toBe(200);
     expect(res.body.amount).toBeCloseTo(12.5);
   });
 
-  test('PUT /expenses/:id should update the expense', async () => {
-    const res = await request(app).put(`/expenses/${created.id}`).send({ description: 'Team lunch' });
+  test('PUT /api/v1/expenses/:id should update the expense', async () => {
+    const res = await request(app).put(`/api/v1/expenses/${created.id}`).send({ description: 'Team lunch' });
     expect(res.statusCode).toBe(200);
     expect(res.body.description).toBe('Team lunch');
   });
 
-  test('DELETE /expenses/:id should delete the expense', async () => {
-    const res = await request(app).delete(`/expenses/${created.id}`);
+  test('DELETE /api/v1/expenses/:id should delete the expense', async () => {
+    const res = await request(app).delete(`/api/v1/expenses/${created.id}`);
     expect(res.statusCode).toBe(204);
   });
 });

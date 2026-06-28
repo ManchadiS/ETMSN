@@ -31,14 +31,14 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use('/restaurants', restaurantsRouter);
-app.use('/expenses', expensesRouter);
-app.use('/billing', billingRouter);
-app.use('/users', usersRouter);
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-app.use('/debug', debugRouter);
+app.use('/api/v1/restaurants', restaurantsRouter);
+app.use('/api/v1/expenses', expensesRouter);
+app.use('/api/v1/billing', billingRouter);
+app.use('/api/v1/users', usersRouter);
+app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use('/api/v1/debug', debugRouter);
 
-app.use('/food', foodRouter);
+app.use('/api/v1/food', foodRouter);
 
 app.get('/', (req, res) => res.json({ status: 'ok' }));
 

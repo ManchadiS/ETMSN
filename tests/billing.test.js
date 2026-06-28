@@ -6,26 +6,26 @@ describe('Billing API', () => {
   let restaurantId;
 
   beforeAll(async () => {
-    const res = await request(app).post('/restaurants').send({ name: 'Billing Test Restaurant', address: '123 Main St' });
+    const res = await request(app).post('/api/v1/restaurants').send({ name: 'Billing Test Restaurant', address: '123 Main St' });
     restaurantId = res.body.id;
   });
 
   afterAll(async () => {
     if (restaurantId) {
-      await request(app).delete(`/restaurants/${restaurantId}`);
+      await request(app).delete(`/api/v1/restaurants/${restaurantId}`);
     }
   });
 
-  test('POST /billing should create a billing', async () => {
-    const res = await request(app).post('/billing').send({ amount: 100.0, restaurantId, date: '2026-06-19', description: 'Invoice', status: 'pending' });
+  test('POST /api/v1/billing should create a billing', async () => {
+    const res = await request(app).post('/api/v1/billing').send({ amount: 100.0, restaurantId, date: '2026-06-19', description: 'Invoice', status: 'pending' });
     expect(res.statusCode).toBe(201);
     expect(res.body).toHaveProperty('id');
     expect(res.body.amount).toBeCloseTo(100.0);
     created = res.body;
   });
 
-  test('POST /billing with email and food items should send bill', async () => {
-    const res = await request(app).post('/billing').send({
+  test('POST /api/v1/billing with email and food items should send bill', async () => {
+    const res = await request(app).post('/api/v1/billing').send({
       amount: 500.0,
       restaurantId,
       date: '2026-06-19',
@@ -50,26 +50,26 @@ describe('Billing API', () => {
     expect(res.body.foodItems).toHaveLength(3);
   });
 
-  test('GET /billing should list billings', async () => {
-    const res = await request(app).get('/billing');
+  test('GET /api/v1/billing should list billings', async () => {
+    const res = await request(app).get('/api/v1/billing');
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  test('GET /billing/:id should return the billing', async () => {
-    const res = await request(app).get(`/billing/${created.id}`);
+  test('GET /api/v1/billing/:id should return the billing', async () => {
+    const res = await request(app).get(`/api/v1/billing/${created.id}`);
     expect(res.statusCode).toBe(200);
     expect(res.body.amount).toBeCloseTo(100.0);
   });
 
-  test('PUT /billing/:id should update the billing', async () => {
-    const res = await request(app).put(`/billing/${created.id}`).send({ status: 'paid' });
+  test('PUT /api/v1/billing/:id should update the billing', async () => {
+    const res = await request(app).put(`/api/v1/billing/${created.id}`).send({ status: 'paid' });
     expect(res.statusCode).toBe(200);
     expect(res.body.status).toBe('paid');
   });
 
-  test('DELETE /billing/:id should delete the billing', async () => {
-    const res = await request(app).delete(`/billing/${created.id}`);
+  test('DELETE /api/v1/billing/:id should delete the billing', async () => {
+    const res = await request(app).delete(`/api/v1/billing/${created.id}`);
     expect(res.statusCode).toBe(204);
   });
 });
