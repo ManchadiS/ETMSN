@@ -2,7 +2,7 @@
 const { v4: uuidv4 } = require('uuid');
 const useDb = process.env.USE_DB === 'true';
 
-let Restaurant, FoodItem, Expense, Billing, User;
+let Restaurant, FoodItem, Expense, Billing, User, Inventory;
 
 if (useDb) {
   const mongoose = require('mongoose');
@@ -61,11 +61,18 @@ if (useDb) {
     age: { type: Number, required: true }
   }, { timestamps: true, id: false });
 
+  const InventorySchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    restaurantId: { type: String, required: true },
+    name: { type: String, required: true }
+  }, { timestamps: true, id: false });
+
   Restaurant = mongoose.model('Restaurant', RestaurantSchema);
   FoodItem = mongoose.model('FoodItem', FoodItemSchema);
   Expense = mongoose.model('Expense', ExpenseSchema);
   Billing = mongoose.model('Billing', BillingSchema);
   User = mongoose.model('User', UserSchema);
+  Inventory = mongoose.model('Inventory', InventorySchema);
 }
 
 const store = {
@@ -73,7 +80,8 @@ const store = {
   rooms: [],
   bookings: [],
   expenses: [],
-  users: []
+  users: [],
+  inventory: []
 };
 
 async function listFoodItems(restaurantId) {
@@ -450,6 +458,66 @@ async function deleteUser(id) {
   return true;
 }
 
+async function listInventory(restaurantId) {
+  if (useDb) {
+    const query = restaurantId ? { restaurantId } : {};
+    const rows = await Inventory.find(query);
+    return rows.map(r => ({ id: r.id, restaurantId: r.restaurantId, name: r.name }));
+  }
+  return (store.inventory || []).filter(i => !restaurantId || i.restaurantId === restaurantId);
+}
+
+async function createInventory(data) {
+  const id = uuidv4();
+  if (useDb) {
+    const item = new Inventory({ id, restaurantId: data.restaurantId, name: data.name });
+    await item.save();
+    return { id: item.id, restaurantId: item.restaurantId, name: item.name };
+  }
+  if (!store.inventory) store.inventory = [];
+  const item = { id, restaurantId: data.restaurantId, name: data.name };
+  store.inventory.push(item);
+  return item;
+}
+
+async function getInventory(id) {
+  if (useDb) {
+    const row = await Inventory.findOne({ id });
+    if (!row) return null;
+    return { id: row.id, restaurantId: row.restaurantId, name: row.name };
+  }
+  if (!store.inventory) store.inventory = [];
+  return store.inventory.find(i => i.id === id) || null;
+}
+
+async function updateInventory(id, data) {
+  if (useDb) {
+    const row = await Inventory.findOne({ id });
+    if (!row) return null;
+    if (data.name !== undefined) row.name = data.name;
+    if (data.restaurantId !== undefined) row.restaurantId = data.restaurantId;
+    await row.save();
+    return { id: row.id, restaurantId: row.restaurantId, name: row.name };
+  }
+  if (!store.inventory) store.inventory = [];
+  const idx = store.inventory.findIndex(i => i.id === id);
+  if (idx === -1) return null;
+  store.inventory[idx] = { ...store.inventory[idx], ...data };
+  return store.inventory[idx];
+}
+
+async function deleteInventory(id) {
+  if (useDb) {
+    const res = await Inventory.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+  if (!store.inventory) store.inventory = [];
+  const idx = store.inventory.findIndex(i => i.id === id);
+  if (idx === -1) return false;
+  store.inventory.splice(idx, 1);
+  return true;
+}
+
 module.exports = {
   store,
   listRestaurants,
@@ -477,5 +545,10 @@ module.exports = {
   getUser,
   getUserByEmail,
   updateUser,
-  deleteUser
+  deleteUser,
+  listInventory,
+  createInventory,
+  getInventory,
+  updateInventory,
+  deleteInventory
 };

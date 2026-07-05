@@ -10,6 +10,7 @@ const billingRouter = require('./routes/billing');
 const foodRouter = require('./routes/food');
 const debugRouter = require('./routes/debug');
 const usersRouter = require('./routes/users');
+const inventoryRouter = require('./routes/inventory');
 
 const app = express();
 app.use(express.json());
@@ -39,6 +40,7 @@ app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use('/api/v1/debug', debugRouter);
 
 app.use('/api/v1/food', foodRouter);
+app.use('/api/v1/inventory', inventoryRouter);
 
 app.get('/', (req, res) => res.json({ status: 'ok' }));
 
