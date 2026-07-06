@@ -11,6 +11,8 @@ const foodRouter = require('./routes/food');
 const debugRouter = require('./routes/debug');
 const usersRouter = require('./routes/users');
 const inventoryRouter = require('./routes/inventory');
+const ordersRouter = require('./routes/orders');
+const customersRouter = require('./routes/customers');
 
 const app = express();
 app.use(express.json());
@@ -36,11 +38,13 @@ app.use('/api/v1/restaurants', restaurantsRouter);
 app.use('/api/v1/expenses', expensesRouter);
 app.use('/api/v1/billing', billingRouter);
 app.use('/api/v1/users', usersRouter);
+app.use('/api/v1/customers', customersRouter);
 app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use('/api/v1/debug', debugRouter);
 
 app.use('/api/v1/food', foodRouter);
 app.use('/api/v1/inventory', inventoryRouter);
+app.use('/api/v1/orders', ordersRouter);
 
 app.get('/', (req, res) => res.json({ status: 'ok' }));
 

@@ -68,19 +68,39 @@ function formatBill(billing, restaurant) {
     return `${item.name} x${qty} ₹${itemTotal}${time}`;
   }).join('\n') || 'No items';
 
-  return [
+  const discountPercent = Number(billing.discount || 0);
+  const itemsTotal = discountPercent > 0 ? (total / (1 - discountPercent / 100)) : total;
+  const discountAmount = itemsTotal - total;
+
+  const billLines = [
     `BILL / INVOICE - ${restaurant && restaurant.name ? restaurant.name : 'Engineering Tadka'}`,
+  ];
+  if (billing.orderNumber) {
+    billLines.push(`Order Number: #${billing.orderNumber}`);
+  }
+  billLines.push(
     `Date: ${billing.date || new Date().toISOString().split('T')[0]}`,
     `Time: ${new Date().toLocaleTimeString()}`,
     `Contact: ${billing.mobile || 'N/A'}`,
     '',
     itemsText,
-    '',
+    ''
+  );
+
+  if (discountPercent > 0) {
+    billLines.push(`ITEMS TOTAL: ₹${itemsTotal.toFixed(2)}`);
+    billLines.push(`DISCOUNT (${discountPercent}%): -₹${discountAmount.toFixed(2)}`);
+  }
+
+  billLines.push(
     `SUBTOTAL: ₹${subtotal.toFixed(2)}`,
     `CGST: ₹${cgst.toFixed(2)}`,
     `SGST: ₹${sgst.toFixed(2)}`,
-    `TOTAL: ₹${total.toFixed(2)}`
-  ].join('\n');
+    `TOTAL: ₹${total.toFixed(2)}`,
+    '',
+    `Note: Prices are inclusive of GST.`
+  );
+  return billLines.join('\n');
 }
 
 function formatCurrency(amount) {
@@ -131,7 +151,8 @@ function createBillPdf(billing, restaurant) {
 
     y += 72;
 
-    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(13).text('TAX INVOICE', margin, y);
+    const invoiceTitle = billing.orderNumber ? `TAX INVOICE (Order #${billing.orderNumber})` : 'TAX INVOICE';
+    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(13).text(invoiceTitle, margin, y);
     y += 22;
 
     const col = {
@@ -222,6 +243,23 @@ function createBillPdf(billing, restaurant) {
       y += bold ? 22 : 18;
     };
 
+    const discountPercent = Number(billing.discount || 0);
+    const itemsTotal = discountPercent > 0 ? (total / (1 - discountPercent / 100)) : total;
+    const discountAmount = itemsTotal - total;
+
+    if (discountPercent > 0) {
+      drawTotalRow('Items Total', itemsTotal);
+      const drawTotalRowWithNegative = (label, value) => {
+        doc.font('Helvetica')
+          .fontSize(10)
+          .fillColor('#ef4444');
+        doc.text(label, totalsX, y, { width: labelWidth });
+        doc.text(`-Rs. ${Number(value).toFixed(2)}`, totalsX + labelWidth, y, { width: valueWidth, align: 'right' });
+        y += 18;
+      };
+      drawTotalRowWithNegative(`Discount (${discountPercent}%)`, discountAmount);
+    }
+
     drawTotalRow('Subtotal', subtotal);
     drawTotalRow('CGST', cgst);
     drawTotalRow('SGST', sgst);
@@ -229,7 +267,10 @@ function createBillPdf(billing, restaurant) {
       .moveTo(totalsX, y - 4).lineTo(rightEdge, y - 4).stroke();
     drawTotalRow('TOTAL', total, true);
 
-    y += 16;
+    doc.font('Helvetica-Oblique').fontSize(8).fillColor('#64748b')
+      .text('(Prices are inclusive of GST)', totalsX, y, { width: labelWidth + valueWidth, align: 'right' });
+
+    y += 24;
 
     const infoBoxHeight = billing.description ? 58 : 44;
     doc.rect(margin, y, contentWidth * 0.55, infoBoxHeight).stroke(colors.border);

@@ -1,14 +1,47 @@
 // Simple store with optional MongoDB persistence via mongoose
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const useDb = process.env.USE_DB === 'true';
 
-let Restaurant, FoodItem, Expense, Billing, User, Inventory;
+let Restaurant, FoodItem, Expense, Billing, User, Inventory, Order, Customer;
 
 if (useDb) {
   const mongoose = require('mongoose');
   const { connect } = require('../db/mongodb');
 
-  connect().catch(err => {
+  connect().then(async () => {
+    try {
+      // Wait for models to be compiled
+      const userCount = await User.countDocuments({});
+      if (userCount === 0) {
+        const adminPasswordHash = crypto.createHash('sha256').update('admin123').digest('hex');
+        const defaultAdmin = new User({
+          id: 'default-admin-id',
+          firstName: 'Admin',
+          lastName: 'User',
+          email: 'admin@example.com',
+          password: adminPasswordHash,
+          dob: '1990-01-01',
+          age: 36
+        });
+        await defaultAdmin.save();
+        console.log('✅ Seeded default admin user in MongoDB: admin@example.com / admin123');
+      }
+
+      const restCount = await Restaurant.countDocuments({});
+      if (restCount === 0) {
+        const defaultRest = new Restaurant({
+          id: 'default-restaurant-id',
+          name: 'Engineering Tadka Main Outlet',
+          address: '123 Tech Park, Silicon Valley'
+        });
+        await defaultRest.save();
+        console.log('✅ Seeded default restaurant in MongoDB');
+      }
+    } catch (err) {
+      console.error('Error seeding MongoDB:', err);
+    }
+  }).catch(err => {
     console.error('MongoDB Connection Error:', err);
   });
 
@@ -48,7 +81,9 @@ if (useDb) {
     emailId: { type: String },
     cgst: { type: Number, default: 0 },
     sgst: { type: Number, default: 0 },
-    foodItems: { type: Array, default: [] }
+    foodItems: { type: Array, default: [] },
+    orderNumber: { type: Number },
+    discount: { type: Number, default: 0 }
   }, { timestamps: true, id: false });
 
   const UserSchema = new mongoose.Schema({
@@ -67,21 +102,63 @@ if (useDb) {
     name: { type: String, required: true }
   }, { timestamps: true, id: false });
 
+  const OrderSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    restaurantId: { type: String, required: true },
+    tableNo: { type: String },
+    items: { type: Array, default: [] },
+    status: { type: String, default: 'received' },
+    totalAmount: { type: Number, required: true },
+    date: { type: String },
+    mobile: { type: String },
+    emailId: { type: String },
+    orderNumber: { type: Number },
+    discount: { type: Number, default: 0 }
+  }, { timestamps: true, id: false });
+
+  const CustomerSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    mobile: { type: String, unique: true, sparse: true },
+    emailId: { type: String, sparse: true },
+    loyaltyPoints: { type: Number, default: 0 },
+    lastLoyaltyActivity: { type: Date, default: Date.now }
+  }, { timestamps: true, id: false });
+
   Restaurant = mongoose.model('Restaurant', RestaurantSchema);
   FoodItem = mongoose.model('FoodItem', FoodItemSchema);
   Expense = mongoose.model('Expense', ExpenseSchema);
   Billing = mongoose.model('Billing', BillingSchema);
   User = mongoose.model('User', UserSchema);
   Inventory = mongoose.model('Inventory', InventorySchema);
+  Order = mongoose.model('Order', OrderSchema);
+  Customer = mongoose.model('Customer', CustomerSchema);
 }
 
 const store = {
-  restaurants: [],
+  restaurants: [
+    {
+      id: 'default-restaurant-id',
+      name: 'Engineering Tadka Main Outlet',
+      address: '123 Tech Park, Silicon Valley'
+    }
+  ],
   rooms: [],
   bookings: [],
   expenses: [],
-  users: [],
-  inventory: []
+  users: [
+    {
+      id: 'default-admin-id',
+      firstName: 'Admin',
+      lastName: 'User',
+      email: 'admin@example.com',
+      password: crypto.createHash('sha256').update('admin123').digest('hex'),
+      dob: '1990-01-01',
+      age: 36
+    }
+  ],
+  inventory: [],
+  orders: [],
+  customers: []
 };
 
 async function listFoodItems(restaurantId) {
@@ -165,13 +242,47 @@ async function listBillings(restaurantId) {
   if (useDb) {
     const query = restaurantId ? { restaurantId } : {};
     const rows = await Billing.find(query);
-    return rows.map(r => ({ id: r.id, amount: r.amount, restaurantId: r.restaurantId, date: r.date, description: r.description, status: r.status, mobile: r.mobile, emailId: r.emailId, cgst: r.cgst, sgst: r.sgst, foodItems: r.foodItems || [] }));
+    return rows.map(r => ({ id: r.id, amount: r.amount, restaurantId: r.restaurantId, date: r.date, description: r.description, status: r.status, mobile: r.mobile, emailId: r.emailId, cgst: r.cgst, sgst: r.sgst, foodItems: r.foodItems || [], orderNumber: r.orderNumber, discount: r.discount || 0 }));
   }
   return (store.billings || []).filter(b => !restaurantId || b.restaurantId === restaurantId);
 }
 
+async function checkLoyaltyExpiry(customer) {
+  if (!customer || !customer.loyaltyPoints) return customer;
+  const expiryDays = 30;
+  const now = new Date();
+  const lastActivity = customer.lastLoyaltyActivity ? new Date(customer.lastLoyaltyActivity) : new Date();
+  const diffTime = now - lastActivity;
+  const diffDays = diffTime / (1000 * 60 * 60 * 24);
+  
+  if (diffDays > expiryDays && customer.loyaltyPoints > 0) {
+    customer.loyaltyPoints = 0;
+    if (useDb && customer.save) {
+      await customer.save();
+    }
+  }
+  return customer;
+}
+
+function checkLoyaltyExpiryInMem(c) {
+  if (!c || !c.loyaltyPoints) return c;
+  const expiryDays = 30;
+  const now = new Date();
+  const lastActivity = c.lastLoyaltyActivity ? new Date(c.lastLoyaltyActivity) : new Date();
+  const diffTime = now - lastActivity;
+  const diffDays = diffTime / (1000 * 60 * 60 * 24);
+  
+  if (diffDays > expiryDays && c.loyaltyPoints > 0) {
+    c.loyaltyPoints = 0;
+  }
+  return c;
+}
+
 async function createBilling(data) {
   const id = uuidv4();
+  const totalAmount = (data.amount || 0) + (data.cgst || 0) + (data.sgst || 0);
+  const points = Math.round(totalAmount);
+
   if (useDb) {
     const billing = new Billing({
       id,
@@ -184,14 +295,83 @@ async function createBilling(data) {
       emailId: data.emailId || null,
       cgst: data.cgst || 0,
       sgst: data.sgst || 0,
-      foodItems: data.foodItems || []
+      foodItems: data.foodItems || [],
+      orderNumber: data.orderNumber || null,
+      discount: data.discount || 0
     });
     await billing.save();
-    return { id: billing.id, amount: billing.amount, restaurantId: billing.restaurantId, date: billing.date, description: billing.description, status: billing.status, mobile: billing.mobile, emailId: billing.emailId, cgst: billing.cgst, sgst: billing.sgst, foodItems: billing.foodItems };
+
+    // Create or update Customer if mobile or email is present
+    if (data.mobile || data.emailId) {
+      try {
+        let customer = null;
+        if (data.mobile) {
+          customer = await Customer.findOne({ mobile: data.mobile });
+        }
+        if (!customer && data.emailId) {
+          customer = await Customer.findOne({ emailId: data.emailId });
+        }
+        
+        if (customer) {
+          await checkLoyaltyExpiry(customer);
+          customer.loyaltyPoints = (customer.loyaltyPoints || 0) + points;
+          customer.lastLoyaltyActivity = new Date();
+          if (data.emailId && !customer.emailId) {
+            customer.emailId = data.emailId;
+          }
+          if (data.mobile && !customer.mobile) {
+            customer.mobile = data.mobile;
+          }
+          await customer.save();
+        } else {
+          customer = new Customer({
+            id: uuidv4(),
+            mobile: data.mobile || undefined,
+            emailId: data.emailId || undefined,
+            loyaltyPoints: points,
+            lastLoyaltyActivity: new Date()
+          });
+          await customer.save();
+        }
+      } catch (err) {
+        console.error('Error updating customer loyalty:', err);
+      }
+    }
+
+    return { id: billing.id, amount: billing.amount, restaurantId: billing.restaurantId, date: billing.date, description: billing.description, status: billing.status, mobile: billing.mobile, emailId: billing.emailId, cgst: billing.cgst, sgst: billing.sgst, foodItems: billing.foodItems, orderNumber: billing.orderNumber, discount: billing.discount || 0 };
   }
   if (!store.billings) store.billings = [];
-  const billing = { id, amount: data.amount, restaurantId: data.restaurantId || null, date: data.date || null, description: data.description || null, status: data.status || 'pending', mobile: data.mobile || null, emailId: data.emailId || null, cgst: data.cgst || 0, sgst: data.sgst || 0, foodItems: data.foodItems || [] };
+  const billing = { id, amount: data.amount, restaurantId: data.restaurantId || null, date: data.date || null, description: data.description || null, status: data.status || 'pending', mobile: data.mobile || null, emailId: data.emailId || null, cgst: data.cgst || 0, sgst: data.sgst || 0, foodItems: data.foodItems || [], orderNumber: data.orderNumber || null, discount: data.discount || 0 };
   store.billings.push(billing);
+
+  // In-memory Customer creation/update
+  if (data.mobile || data.emailId) {
+    if (!store.customers) store.customers = [];
+    let customer = null;
+    if (data.mobile) {
+      customer = store.customers.find(c => c.mobile === data.mobile);
+    }
+    if (!customer && data.emailId) {
+      customer = store.customers.find(c => c.emailId === data.emailId);
+    }
+    
+    if (customer) {
+      checkLoyaltyExpiryInMem(customer);
+      customer.loyaltyPoints = (customer.loyaltyPoints || 0) + points;
+      customer.lastLoyaltyActivity = new Date();
+      if (data.emailId && !customer.emailId) customer.emailId = data.emailId;
+      if (data.mobile && !customer.mobile) customer.mobile = data.mobile;
+    } else {
+      store.customers.push({
+        id: uuidv4(),
+        mobile: data.mobile || null,
+        emailId: data.emailId || null,
+        loyaltyPoints: points,
+        lastLoyaltyActivity: new Date()
+      });
+    }
+  }
+
   return billing;
 }
 
@@ -199,7 +379,7 @@ async function getBilling(id) {
   if (useDb) {
     const row = await Billing.findOne({ id });
     if (!row) return null;
-    return { id: row.id, amount: row.amount, restaurantId: row.restaurantId, date: row.date, description: row.description, status: row.status, mobile: row.mobile, emailId: row.emailId, cgst: row.cgst, sgst: row.sgst, foodItems: row.foodItems || [] };
+    return { id: row.id, amount: row.amount, restaurantId: row.restaurantId, date: row.date, description: row.description, status: row.status, mobile: row.mobile, emailId: row.emailId, cgst: row.cgst, sgst: row.sgst, foodItems: row.foodItems || [], orderNumber: row.orderNumber, discount: row.discount || 0 };
   }
   if (!store.billings) store.billings = [];
   return store.billings.find(b => b.id === id) || null;
@@ -219,8 +399,10 @@ async function updateBilling(id, data) {
     if (data.cgst !== undefined) row.cgst = data.cgst;
     if (data.sgst !== undefined) row.sgst = data.sgst;
     if (data.foodItems !== undefined) row.foodItems = data.foodItems;
+    if (data.orderNumber !== undefined) row.orderNumber = data.orderNumber;
+    if (data.discount !== undefined) row.discount = data.discount;
     await row.save();
-    return { id: row.id, amount: row.amount, restaurantId: row.restaurantId, date: row.date, description: row.description, status: row.status, mobile: row.mobile, emailId: row.emailId, cgst: row.cgst, sgst: row.sgst, foodItems: row.foodItems || [] };
+    return { id: row.id, amount: row.amount, restaurantId: row.restaurantId, date: row.date, description: row.description, status: row.status, mobile: row.mobile, emailId: row.emailId, cgst: row.cgst, sgst: row.sgst, foodItems: row.foodItems || [], orderNumber: row.orderNumber, discount: row.discount || 0 };
   }
   if (!store.billings) store.billings = [];
   const idx = store.billings.findIndex(b => b.id === id);
@@ -517,6 +699,218 @@ async function deleteInventory(id) {
   store.inventory.splice(idx, 1);
   return true;
 }
+async function listOrders(restaurantId) {
+  if (useDb) {
+    const query = restaurantId ? { restaurantId } : {};
+    const rows = await Order.find(query);
+    return rows.map(r => ({ id: r.id, restaurantId: r.restaurantId, tableNo: r.tableNo, mobile: r.mobile, emailId: r.emailId, items: r.items, status: r.status, totalAmount: r.totalAmount, date: r.date, orderNumber: r.orderNumber, discount: r.discount || 0 }));
+  }
+  if (!store.orders) store.orders = [];
+  return store.orders.filter(o => !restaurantId || o.restaurantId === restaurantId);
+}
+
+async function createOrder(data) {
+  const id = uuidv4();
+  const dateStr = data.date || new Date().toISOString().split('T')[0];
+  
+  // Calculate next orderNumber
+  let orderNumber = 1;
+  if (useDb) {
+    const lastOrderWithNum = await Order.findOne({ restaurantId: data.restaurantId, orderNumber: { $exists: true } }).sort({ orderNumber: -1 });
+    if (lastOrderWithNum && lastOrderWithNum.orderNumber) {
+      orderNumber = lastOrderWithNum.orderNumber + 1;
+    } else {
+      const count = await Order.countDocuments({ restaurantId: data.restaurantId });
+      orderNumber = count + 1;
+    }
+  } else {
+    if (!store.orders) store.orders = [];
+    const restaurantOrders = store.orders.filter(o => o.restaurantId === data.restaurantId);
+    if (restaurantOrders.length > 0) {
+      const maxNum = Math.max(...restaurantOrders.map(o => o.orderNumber || 0));
+      orderNumber = maxNum > 0 ? maxNum + 1 : restaurantOrders.length + 1;
+    }
+  }
+
+  const orderData = {
+    id,
+    restaurantId: data.restaurantId,
+    tableNo: data.tableNo,
+    mobile: data.mobile || null,
+    emailId: data.emailId || null,
+    items: data.items || [],
+    status: data.status || 'received',
+    totalAmount: data.totalAmount || 0,
+    date: dateStr,
+    orderNumber,
+    discount: data.discount || 0
+  };
+  if (useDb) {
+    const item = new Order(orderData);
+    await item.save();
+    return orderData;
+  }
+  if (!store.orders) store.orders = [];
+  store.orders.push(orderData);
+  return orderData;
+}
+
+async function getOrder(id) {
+  if (useDb) {
+    const row = await Order.findOne({ id });
+    if (!row) return null;
+    return { id: row.id, restaurantId: row.restaurantId, tableNo: row.tableNo, mobile: row.mobile, emailId: row.emailId, items: row.items, status: row.status, totalAmount: row.totalAmount, date: row.date, orderNumber: row.orderNumber, discount: row.discount || 0 };
+  }
+  if (!store.orders) store.orders = [];
+  return store.orders.find(o => o.id === id) || null;
+}
+
+async function updateOrder(id, data) {
+  if (useDb) {
+    const row = await Order.findOne({ id });
+    if (!row) return null;
+    if (data.restaurantId !== undefined) row.restaurantId = data.restaurantId;
+    if (data.tableNo !== undefined) row.tableNo = data.tableNo;
+    if (data.mobile !== undefined) row.mobile = data.mobile;
+    if (data.emailId !== undefined) row.emailId = data.emailId;
+    if (data.items !== undefined) row.items = data.items;
+    if (data.status !== undefined) row.status = data.status;
+    if (data.totalAmount !== undefined) row.totalAmount = data.totalAmount;
+    if (data.date !== undefined) row.date = data.date;
+    if (data.orderNumber !== undefined) row.orderNumber = data.orderNumber;
+    if (data.discount !== undefined) row.discount = data.discount;
+    await row.save();
+    return { id: row.id, restaurantId: row.restaurantId, tableNo: row.tableNo, mobile: row.mobile, emailId: row.emailId, items: row.items, status: row.status, totalAmount: row.totalAmount, date: row.date, orderNumber: row.orderNumber, discount: row.discount || 0 };
+  }
+  if (!store.orders) store.orders = [];
+  const idx = store.orders.findIndex(o => o.id === id);
+  if (idx === -1) return null;
+  store.orders[idx] = { ...store.orders[idx], ...data };
+  return store.orders[idx];
+}
+
+async function deleteOrder(id) {
+  if (useDb) {
+    const res = await Order.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+  if (!store.orders) store.orders = [];
+  const idx = store.orders.findIndex(o => o.id === id);
+  if (idx === -1) return false;
+  store.orders.splice(idx, 1);
+  return true;
+}
+async function lookupCustomer(query) {
+  if (useDb) {
+    let row = null;
+    if (query.mobile) {
+      row = await Customer.findOne({ mobile: query.mobile });
+    }
+    if (!row && query.emailId) {
+      row = await Customer.findOne({ emailId: query.emailId });
+    }
+    if (!row) return null;
+    await checkLoyaltyExpiry(row);
+    return { id: row.id, mobile: row.mobile, emailId: row.emailId, loyaltyPoints: row.loyaltyPoints, lastLoyaltyActivity: row.lastLoyaltyActivity };
+  }
+  
+  if (!store.customers) store.customers = [];
+  let row = null;
+  if (query.mobile) {
+    row = store.customers.find(c => c.mobile === query.mobile);
+  }
+  if (!row && query.emailId) {
+    row = store.customers.find(c => c.emailId === query.emailId);
+  }
+  if (row) {
+    checkLoyaltyExpiryInMem(row);
+  }
+  return row || null;
+}
+
+async function listCustomers() {
+  if (useDb) {
+    const rows = await Customer.find({});
+    for (const r of rows) {
+      await checkLoyaltyExpiry(r);
+    }
+    return rows.map(r => ({ id: r.id, mobile: r.mobile, emailId: r.emailId, loyaltyPoints: r.loyaltyPoints, lastLoyaltyActivity: r.lastLoyaltyActivity }));
+  }
+  if (!store.customers) store.customers = [];
+  for (const c of store.customers) {
+    checkLoyaltyExpiryInMem(c);
+  }
+  return store.customers;
+}
+
+async function createCustomer(data) {
+  const id = uuidv4();
+  const customerData = {
+    id,
+    mobile: data.mobile || null,
+    emailId: data.emailId || null,
+    loyaltyPoints: data.loyaltyPoints || 0,
+    lastLoyaltyActivity: new Date()
+  };
+  if (useDb) {
+    const cust = new Customer(customerData);
+    await cust.save();
+    return customerData;
+  }
+  if (!store.customers) store.customers = [];
+  store.customers.push(customerData);
+  return customerData;
+}
+
+async function getCustomer(id) {
+  if (useDb) {
+    const row = await Customer.findOne({ id });
+    if (!row) return null;
+    await checkLoyaltyExpiry(row);
+    return { id: row.id, mobile: row.mobile, emailId: row.emailId, loyaltyPoints: row.loyaltyPoints, lastLoyaltyActivity: row.lastLoyaltyActivity };
+  }
+  if (!store.customers) store.customers = [];
+  const c = store.customers.find(x => x.id === id);
+  if (c) {
+    checkLoyaltyExpiryInMem(c);
+  }
+  return c || null;
+}
+
+async function updateCustomer(id, data) {
+  if (useDb) {
+    const row = await Customer.findOne({ id });
+    if (!row) return null;
+    if (data.mobile !== undefined) row.mobile = data.mobile;
+    if (data.emailId !== undefined) row.emailId = data.emailId;
+    if (data.loyaltyPoints !== undefined) {
+      row.loyaltyPoints = data.loyaltyPoints;
+      row.lastLoyaltyActivity = new Date();
+    }
+    await row.save();
+    return { id: row.id, mobile: row.mobile, emailId: row.emailId, loyaltyPoints: row.loyaltyPoints, lastLoyaltyActivity: row.lastLoyaltyActivity };
+  }
+  if (!store.customers) store.customers = [];
+  const idx = store.customers.findIndex(c => c.id === id);
+  if (idx === -1) return null;
+  store.customers[idx] = { ...store.customers[idx], ...data };
+  if (data.loyaltyPoints !== undefined) {
+    store.customers[idx].lastLoyaltyActivity = new Date();
+  }
+  return store.customers[idx];
+}
+
+async function deleteCustomer(id) {
+  if (useDb) {
+    const res = await Customer.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+  if (!store.customers) store.customers = [];
+  const idx = store.customers.findIndex(c => c.id === id);
+  if (idx === -1) return false;
+  store.customers.splice(idx, 1);
+  return true;
+}
 
 module.exports = {
   store,
@@ -550,5 +944,16 @@ module.exports = {
   createInventory,
   getInventory,
   updateInventory,
-  deleteInventory
+  deleteInventory,
+  listOrders,
+  createOrder,
+  getOrder,
+  updateOrder,
+  deleteOrder,
+  lookupCustomer,
+  listCustomers,
+  createCustomer,
+  getCustomer,
+  updateCustomer,
+  deleteCustomer
 };

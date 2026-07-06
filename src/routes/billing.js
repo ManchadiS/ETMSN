@@ -15,12 +15,12 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { amount, restaurantId, date, description, status, mobile, emailId, cgst, sgst, foodItems } = req.body;
+  const { amount, restaurantId, date, description, status, mobile, emailId, cgst, sgst, foodItems, orderNumber, discount } = req.body;
   if (amount == null || !restaurantId) {
     return res.status(400).json({ error: 'amount and restaurantId are required' });
   }
   
-  const created = await createBilling({ amount, restaurantId, date, description, status, mobile, emailId, cgst, sgst, foodItems });
+  const created = await createBilling({ amount, restaurantId, date, description, status, mobile, emailId, cgst, sgst, foodItems, orderNumber, discount });
 
   if (emailId) {
     try {
