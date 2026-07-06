@@ -3,7 +3,10 @@ const fs = require('fs');
 const spec = {
   openapi: '3.0.0',
   info: { title: 'Restaurant Management API', version: '1.0.0', description: 'API for managing restaurants, menus, expenses, live orders, billing, and customers.' },
-  servers: [{ url: 'http://localhost:3000', description: 'Local development server' }],
+  servers: [
+    { url: 'http://api.engineeringtadka.com/api/v1', description: 'Production API server' },
+    { url: 'http://localhost:3000/api/v1', description: 'Local development server' }
+  ],
   tags: [
     { name: 'Restaurants', description: 'Manage restaurants' },
     { name: 'Food', description: 'Menu / food items' },
@@ -64,6 +67,16 @@ const spec = {
       put: { tags: ['Orders'], summary: 'Update an order', operationId: 'updateOrder', requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/OrderCreate' } } } }, responses: { '200': { description: 'Updated' }, '404': { description: 'Not Found' } } },
       delete: { tags: ['Orders'], summary: 'Delete an order', operationId: 'deleteOrder', responses: { '204': { description: 'No Content' }, '404': { description: 'Not Found' } } }
     },
+    '/customers': {
+      get: { tags: ['Customers'], summary: 'List customer profiles', operationId: 'listCustomers', responses: { '200': { description: 'A list of customers', content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Customer' } } } } } } },
+      post: { tags: ['Customers'], summary: 'Create a customer profile', operationId: 'createCustomer', requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/CustomerCreate' } } } }, responses: { '201': { description: 'Created', content: { 'application/json': { schema: { $ref: '#/components/schemas/Customer' } } } } } }
+    },
+    '/customers/{id}': {
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      get: { tags: ['Customers'], summary: 'Get a customer profile', operationId: 'getCustomer', responses: { '200': { description: 'OK', content: { 'application/json': { schema: { $ref: '#/components/schemas/Customer' } } } }, '404': { description: 'Not Found' } } },
+      put: { tags: ['Customers'], summary: 'Update a customer profile', operationId: 'updateCustomer', requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/CustomerCreate' } } } }, responses: { '200': { description: 'Updated' }, '404': { description: 'Not Found' } } },
+      delete: { tags: ['Customers'], summary: 'Delete a customer profile', operationId: 'deleteCustomer', responses: { '204': { description: 'No Content' }, '404': { description: 'Not Found' } } }
+    },
     '/customers/lookup': {
       get: { tags: ['Customers'], summary: 'Lookup customer details by phone or email', operationId: 'lookupCustomer', parameters: [{ name: 'mobile', in: 'query', schema: { type: 'string' } }, { name: 'emailId', in: 'query', schema: { type: 'string' } }], responses: { '200': { description: 'Customer details', content: { 'application/json': { schema: { $ref: '#/components/schemas/Customer' } } } }, '404': { description: 'Not Found' } } }
     }
@@ -76,11 +89,12 @@ const spec = {
       FoodCreate: { type: 'object', required: ['name', 'price'], properties: { name: { type: 'string' }, price: { type: 'number' }, description: { type: 'string' }, category: { type: 'string' } } },
       Expense: { type: 'object', properties: { id: { type: 'string' }, amount: { type: 'number' }, description: { type: 'string' }, date: { type: 'string', format: 'date' }, category: { type: 'string' } }, required: ['id', 'amount'] },
       ExpenseCreate: { type: 'object', required: ['amount'], properties: { amount: { type: 'number' }, description: { type: 'string' }, date: { type: 'string', format: 'date' }, category: { type: 'string' } } },
-      Billing: { type: 'object', properties: { id: { type: 'string' }, amount: { type: 'number' }, restaurantId: { type: 'string' }, date: { type: 'string', format: 'date' }, description: { type: 'string' }, status: { type: 'string', enum: ['pending', 'paid', 'overdue'] }, mobile: { type: 'string', example: '9870859624' }, emailId: { type: 'string', example: 'customer@example.com' }, cgst: { type: 'number', example: 1.25 }, sgst: { type: 'number', example: 1.25 }, foodItems: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, price: { type: 'number' }, quantity: { type: 'number' }, time: { type: 'string' } } } }, orderNumber: { type: 'number' } }, required: ['id', 'amount'] },
-      BillingCreate: { type: 'object', required: ['amount'], properties: { amount: { type: 'number' }, restaurantId: { type: 'string' }, date: { type: 'string', format: 'date' }, description: { type: 'string' }, status: { type: 'string' }, mobile: { type: 'string' }, emailId: { type: 'string' }, cgst: { type: 'number' }, sgst: { type: 'number' }, foodItems: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, price: { type: 'number' }, quantity: { type: 'number' }, time: { type: 'string' } } } }, orderNumber: { type: 'number' } } },
-      Order: { type: 'object', properties: { id: { type: 'string' }, restaurantId: { type: 'string' }, tableNo: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, price: { type: 'number' }, quantity: { type: 'number' } } } }, status: { type: 'string', enum: ['received', 'preparing', 'ready', 'completed', 'cancelled'] }, totalAmount: { type: 'number' }, date: { type: 'string' }, mobile: { type: 'string' }, emailId: { type: 'string' }, orderNumber: { type: 'number' } }, required: ['id', 'restaurantId', 'totalAmount'] },
-      OrderCreate: { type: 'object', required: ['restaurantId', 'totalAmount'], properties: { restaurantId: { type: 'string' }, tableNo: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, price: { type: 'number' }, quantity: { type: 'number' } } } }, status: { type: 'string' }, totalAmount: { type: 'number' }, date: { type: 'string' }, mobile: { type: 'string' }, emailId: { type: 'string' } } },
-      Customer: { type: 'object', properties: { id: { type: 'string' }, mobile: { type: 'string' }, emailId: { type: 'string' }, loyaltyPoints: { type: 'number' } }, required: ['id'] }
+      Billing: { type: 'object', properties: { id: { type: 'string' }, amount: { type: 'number' }, restaurantId: { type: 'string' }, date: { type: 'string', format: 'date' }, description: { type: 'string' }, status: { type: 'string', enum: ['pending', 'paid', 'overdue'] }, mobile: { type: 'string', example: '9870859624' }, emailId: { type: 'string', example: 'customer@example.com' }, cgst: { type: 'number', example: 1.25 }, sgst: { type: 'number', example: 1.25 }, foodItems: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, price: { type: 'number' }, quantity: { type: 'number' }, time: { type: 'string' } } } }, orderNumber: { type: 'number' }, discount: { type: 'number', default: 0 } }, required: ['id', 'amount'] },
+      BillingCreate: { type: 'object', required: ['amount'], properties: { amount: { type: 'number' }, restaurantId: { type: 'string' }, date: { type: 'string', format: 'date' }, description: { type: 'string' }, status: { type: 'string' }, mobile: { type: 'string' }, emailId: { type: 'string' }, cgst: { type: 'number' }, sgst: { type: 'number' }, foodItems: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, price: { type: 'number' }, quantity: { type: 'number' }, time: { type: 'string' } } } }, orderNumber: { type: 'number' }, discount: { type: 'number', default: 0 } } },
+      Order: { type: 'object', properties: { id: { type: 'string' }, restaurantId: { type: 'string' }, tableNo: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, price: { type: 'number' }, quantity: { type: 'number' } } } }, status: { type: 'string', enum: ['received', 'preparing', 'ready', 'completed', 'cancelled'] }, totalAmount: { type: 'number' }, date: { type: 'string' }, mobile: { type: 'string' }, emailId: { type: 'string' }, orderNumber: { type: 'number' }, discount: { type: 'number', default: 0 } }, required: ['id', 'restaurantId', 'totalAmount'] },
+      OrderCreate: { type: 'object', required: ['restaurantId', 'totalAmount'], properties: { restaurantId: { type: 'string' }, tableNo: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, price: { type: 'number' }, quantity: { type: 'number' } } } }, status: { type: 'string' }, totalAmount: { type: 'number' }, date: { type: 'string' }, mobile: { type: 'string' }, emailId: { type: 'string' }, discount: { type: 'number', default: 0 } } },
+      Customer: { type: 'object', properties: { id: { type: 'string' }, mobile: { type: 'string' }, emailId: { type: 'string' }, loyaltyPoints: { type: 'number' }, lastLoyaltyActivity: { type: 'string', format: 'date-time' } }, required: ['id'] },
+      CustomerCreate: { type: 'object', properties: { mobile: { type: 'string' }, emailId: { type: 'string' }, loyaltyPoints: { type: 'number' } } }
     }
   }
 };
