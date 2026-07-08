@@ -13,7 +13,9 @@ const spec = {
     { name: 'Expenses', description: 'Track expenses' },
     { name: 'Billing', description: 'Manage billings/invoices' },
     { name: 'Orders', description: 'Live kitchen orders' },
-    { name: 'Customers', description: 'Customer profiles and loyalty database' }
+    { name: 'Customers', description: 'Customer profiles and loyalty database' },
+    { name: 'Roles', description: 'Custom roles and permissions configurations' },
+    { name: 'Debug', description: 'Internal testing and system diagnostics' }
   ],
   paths: {
     '/': { get: { tags: ['Restaurants'], summary: 'API root', operationId: 'getRoot', responses: { '200': { description: 'Service status', content: { 'application/json': { example: { status: 'ok' } } } } } } },
@@ -79,6 +81,19 @@ const spec = {
     },
     '/customers/lookup': {
       get: { tags: ['Customers'], summary: 'Lookup customer details by phone or email', operationId: 'lookupCustomer', parameters: [{ name: 'mobile', in: 'query', schema: { type: 'string' } }, { name: 'emailId', in: 'query', schema: { type: 'string' } }], responses: { '200': { description: 'Customer details', content: { 'application/json': { schema: { $ref: '#/components/schemas/Customer' } } } }, '404': { description: 'Not Found' } } }
+    },
+    '/roles': {
+      get: { tags: ['Roles'], summary: 'List all custom roles', operationId: 'listRoles', responses: { '200': { description: 'A list of roles', content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Role' } } } } } } },
+      post: { tags: ['Roles'], summary: 'Create a custom role', operationId: 'createRole', requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/RoleCreate' } } } }, responses: { '201': { description: 'Created', content: { 'application/json': { schema: { $ref: '#/components/schemas/Role' } } } } } }
+    },
+    '/roles/{id}': {
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      get: { tags: ['Roles'], summary: 'Get role details', operationId: 'getRole', responses: { '200': { description: 'OK', content: { 'application/json': { schema: { $ref: '#/components/schemas/Role' } } } }, '404': { description: 'Not Found' } } },
+      put: { tags: ['Roles'], summary: 'Update a custom role', operationId: 'updateRole', requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/RoleCreate' } } } }, responses: { '200': { description: 'Updated' }, '404': { description: 'Not Found' } } },
+      delete: { tags: ['Roles'], summary: 'Delete a custom role', operationId: 'deleteRole', responses: { '204': { description: 'No Content' }, '404': { description: 'Not Found' } } }
+    },
+    '/debug/clean-db': {
+      post: { tags: ['Debug'], summary: 'Wipe and reset database collections', operationId: 'cleanDatabase', responses: { '200': { description: 'Success message', content: { 'application/json': { example: { message: 'Database cleaned' } } } } } }
     }
   },
   components: {
@@ -94,7 +109,9 @@ const spec = {
       Order: { type: 'object', properties: { id: { type: 'string' }, restaurantId: { type: 'string' }, tableNo: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, price: { type: 'number' }, quantity: { type: 'number' } } } }, status: { type: 'string', enum: ['received', 'preparing', 'ready', 'completed', 'cancelled'] }, totalAmount: { type: 'number' }, date: { type: 'string' }, mobile: { type: 'string' }, emailId: { type: 'string' }, orderNumber: { type: 'number' }, discount: { type: 'number', default: 0 } }, required: ['id', 'restaurantId', 'totalAmount'] },
       OrderCreate: { type: 'object', required: ['restaurantId', 'totalAmount'], properties: { restaurantId: { type: 'string' }, tableNo: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, price: { type: 'number' }, quantity: { type: 'number' } } } }, status: { type: 'string' }, totalAmount: { type: 'number' }, date: { type: 'string' }, mobile: { type: 'string' }, emailId: { type: 'string' }, discount: { type: 'number', default: 0 } } },
       Customer: { type: 'object', properties: { id: { type: 'string' }, mobile: { type: 'string' }, emailId: { type: 'string' }, loyaltyPoints: { type: 'number' }, lastLoyaltyActivity: { type: 'string', format: 'date-time' } }, required: ['id'] },
-      CustomerCreate: { type: 'object', properties: { mobile: { type: 'string' }, emailId: { type: 'string' }, loyaltyPoints: { type: 'number' } } }
+      CustomerCreate: { type: 'object', properties: { mobile: { type: 'string' }, emailId: { type: 'string' }, loyaltyPoints: { type: 'number' } } },
+      Role: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, sidebarAccess: { type: 'array', items: { type: 'string' } }, deleteAccess: { type: 'boolean' } }, required: ['id', 'name'] },
+      RoleCreate: { type: 'object', properties: { name: { type: 'string' }, sidebarAccess: { type: 'array', items: { type: 'string' } }, deleteAccess: { type: 'boolean' } }, required: ['name'] }
     }
   }
 };

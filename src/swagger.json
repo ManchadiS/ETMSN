@@ -39,6 +39,14 @@
     {
       "name": "Customers",
       "description": "Customer profiles and loyalty database"
+    },
+    {
+      "name": "Roles",
+      "description": "Custom roles and permissions configurations"
+    },
+    {
+      "name": "Debug",
+      "description": "Internal testing and system diagnostics"
     }
   ],
   "paths": {
@@ -874,6 +882,154 @@
           }
         }
       }
+    },
+    "/roles": {
+      "get": {
+        "tags": [
+          "Roles"
+        ],
+        "summary": "List all custom roles",
+        "operationId": "listRoles",
+        "responses": {
+          "200": {
+            "description": "A list of roles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Role"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Roles"
+        ],
+        "summary": "Create a custom role",
+        "operationId": "createRole",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Role"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/roles/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Roles"
+        ],
+        "summary": "Get role details",
+        "operationId": "getRole",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Role"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Roles"
+        ],
+        "summary": "Update a custom role",
+        "operationId": "updateRole",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Roles"
+        ],
+        "summary": "Delete a custom role",
+        "operationId": "deleteRole",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/debug/clean-db": {
+      "post": {
+        "tags": [
+          "Debug"
+        ],
+        "summary": "Wipe and reset database collections",
+        "operationId": "cleanDatabase",
+        "responses": {
+          "200": {
+            "description": "Success message",
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Database cleaned"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1297,6 +1453,50 @@
             "type": "number"
           }
         }
+      },
+      "Role": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sidebarAccess": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deleteAccess": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "RoleCreate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sidebarAccess": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deleteAccess": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     }
   }
