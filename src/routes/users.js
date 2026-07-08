@@ -7,13 +7,41 @@ const {
   getUser,
   getUserByEmail,
   updateUser,
-  deleteUser
+  deleteUser,
+  getRoleByName
 } = require('../models/store');
 
 // Utility to hash passwords using SHA-256
 function hashPassword(password) {
   if (!password) return '';
   return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+// Helper to append sidebar and delete permissions
+async function resolveUserRights(user) {
+  if (!user) return null;
+  const roleName = user.role || 'Admin';
+  let sidebarAccess = ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing'];
+  let deleteAccess = false;
+
+  if (roleName === 'Super Admin') {
+    sidebarAccess = ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status'];
+    deleteAccess = true;
+  } else {
+    const roleRecord = await getRoleByName(roleName);
+    if (roleRecord) {
+      sidebarAccess = roleRecord.sidebarAccess || [];
+      deleteAccess = !!roleRecord.deleteAccess;
+    }
+  }
+
+  return {
+    ...user,
+    rights: {
+      sidebarAccess,
+      deleteAccess
+    }
+  };
 }
 
 // POST /users/login
@@ -35,12 +63,13 @@ router.post('/login', async (req, res) => {
 
   // Success: Return user details without password
   const { password: _, ...userInfo } = user;
-  res.json(userInfo);
+  const resolved = await resolveUserRights(userInfo);
+  res.json(resolved);
 });
 
 // POST /users/register
 router.post('/register', async (req, res) => {
-  const { firstName, lastName, email, password, dob, age } = req.body;
+  const { firstName, lastName, email, password, dob, age, role } = req.body;
   if (!firstName || !lastName || !email || !password || !dob || age == null) {
     return res.status(400).json({ error: 'All fields are required (firstName, lastName, email, password, dob, age)' });
   }
@@ -57,10 +86,12 @@ router.post('/register', async (req, res) => {
     email,
     password: hashedPassword,
     dob,
-    age: Number(age)
+    age: Number(age),
+    role: role || 'Admin'
   });
 
-  res.status(201).json(created);
+  const resolved = await resolveUserRights(created);
+  res.status(201).json(resolved);
 });
 
 // GET /users (List all users)
@@ -68,7 +99,11 @@ router.get('/', async (req, res) => {
   const list = await listUsers();
   // Strip passwords for safety
   const safeList = list.map(({ password, ...u }) => u);
-  res.json(safeList);
+  const resolvedList = [];
+  for (const u of safeList) {
+    resolvedList.push(await resolveUserRights(u));
+  }
+  res.json(resolvedList);
 });
 
 // GET /users/:id (Get single user)
@@ -76,12 +111,13 @@ router.get('/:id', async (req, res) => {
   const user = await getUser(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   const { password, ...userInfo } = user;
-  res.json(userInfo);
+  const resolved = await resolveUserRights(userInfo);
+  res.json(resolved);
 });
 
 // POST /users (Admin Create User)
 router.post('/', async (req, res) => {
-  const { firstName, lastName, email, password, dob, age } = req.body;
+  const { firstName, lastName, email, password, dob, age, role } = req.body;
   if (!firstName || !lastName || !email || !password || !dob || age == null) {
     return res.status(400).json({ error: 'All fields are required' });
   }
@@ -98,10 +134,12 @@ router.post('/', async (req, res) => {
     email,
     password: hashedPassword,
     dob,
-    age: Number(age)
+    age: Number(age),
+    role: role || 'Admin'
   });
 
-  res.status(201).json(created);
+  const resolved = await resolveUserRights(created);
+  res.status(201).json(resolved);
 });
 
 // PUT /users/:id (Update User)
@@ -129,7 +167,8 @@ router.put('/:id', async (req, res) => {
   }
 
   const updated = await updateUser(req.params.id, data);
-  res.json(updated);
+  const resolved = await resolveUserRights(updated);
+  res.json(resolved);
 });
 
 // DELETE /users/:id (Delete User)

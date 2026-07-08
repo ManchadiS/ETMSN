@@ -13,6 +13,7 @@ const usersRouter = require('./routes/users');
 const inventoryRouter = require('./routes/inventory');
 const ordersRouter = require('./routes/orders');
 const customersRouter = require('./routes/customers');
+const rolesRouter = require('./routes/roles');
 
 const app = express();
 app.use(express.json());
@@ -38,6 +39,7 @@ app.use('/api/v1/restaurants', restaurantsRouter);
 app.use('/api/v1/expenses', expensesRouter);
 app.use('/api/v1/billing', billingRouter);
 app.use('/api/v1/users', usersRouter);
+app.use('/api/v1/roles', rolesRouter);
 app.use('/api/v1/customers', customersRouter);
 app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use('/api/v1/debug', debugRouter);

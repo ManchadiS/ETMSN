@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const useDb = process.env.USE_DB === 'true';
 
-let Restaurant, FoodItem, Expense, Billing, User, Inventory, Order, Customer;
+let Restaurant, FoodItem, Expense, Billing, User, Inventory, Order, Customer, Role;
 
 if (useDb) {
   const mongoose = require('mongoose');
@@ -12,8 +12,48 @@ if (useDb) {
   connect().then(async () => {
     try {
       // Wait for models to be compiled
-      const userCount = await User.countDocuments({});
-      if (userCount === 0) {
+      const roleCount = await Role.countDocuments({});
+      if (roleCount === 0) {
+        const superAdminRole = new Role({
+          id: 'super-admin-role-id',
+          name: 'Super Admin',
+          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status'],
+          deleteAccess: true
+        });
+        const adminRole = new Role({
+          id: 'admin-role-id',
+          name: 'Admin',
+          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing'],
+          deleteAccess: false
+        });
+        await superAdminRole.save();
+        await adminRole.save();
+        console.log('✅ Seeded default Roles in MongoDB: Super Admin, Admin');
+      }
+
+      const superAdminUser = await User.findOne({ email: 'sagarmanchadi324@gmail.com' });
+      const adminPasswordHash = crypto.createHash('sha256').update('sagar@2410').digest('hex');
+      if (!superAdminUser) {
+        const defaultSuperAdmin = new User({
+          id: 'sagar-super-admin-id',
+          firstName: 'Sagar',
+          lastName: 'Manchadi',
+          email: 'sagarmanchadi324@gmail.com',
+          password: adminPasswordHash,
+          dob: '1995-01-01',
+          age: 31,
+          role: 'Super Admin'
+        });
+        await defaultSuperAdmin.save();
+        console.log('✅ Seeded default Super Admin: sagarmanchadi324@gmail.com / sagar@2410');
+      } else {
+        superAdminUser.password = adminPasswordHash;
+        await superAdminUser.save();
+        console.log('✅ Updated default Super Admin password: sagarmanchadi324@gmail.com / sagar@2410');
+      }
+
+      const adminUser = await User.findOne({ email: 'admin@example.com' });
+      if (!adminUser) {
         const adminPasswordHash = crypto.createHash('sha256').update('admin123').digest('hex');
         const defaultAdmin = new User({
           id: 'default-admin-id',
@@ -22,10 +62,11 @@ if (useDb) {
           email: 'admin@example.com',
           password: adminPasswordHash,
           dob: '1990-01-01',
-          age: 36
+          age: 36,
+          role: 'Admin'
         });
         await defaultAdmin.save();
-        console.log('✅ Seeded default admin user in MongoDB: admin@example.com / admin123');
+        console.log('✅ Seeded default Admin user in MongoDB: admin@example.com / admin123');
       }
 
       const restCount = await Restaurant.countDocuments({});
@@ -93,7 +134,15 @@ if (useDb) {
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     dob: { type: String, required: true },
-    age: { type: Number, required: true }
+    age: { type: Number, required: true },
+    role: { type: String, default: 'Admin' }
+  }, { timestamps: true, id: false });
+
+  const RoleSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    name: { type: String, required: true, unique: true },
+    sidebarAccess: { type: [String], default: [] },
+    deleteAccess: { type: Boolean, default: false }
   }, { timestamps: true, id: false });
 
   const InventorySchema = new mongoose.Schema({
@@ -113,7 +162,8 @@ if (useDb) {
     mobile: { type: String },
     emailId: { type: String },
     orderNumber: { type: Number },
-    discount: { type: Number, default: 0 }
+    discount: { type: Number, default: 0 },
+    orderType: { type: String, default: 'dinein' }
   }, { timestamps: true, id: false });
 
   const CustomerSchema = new mongoose.Schema({
@@ -132,6 +182,7 @@ if (useDb) {
   Inventory = mongoose.model('Inventory', InventorySchema);
   Order = mongoose.model('Order', OrderSchema);
   Customer = mongoose.model('Customer', CustomerSchema);
+  Role = mongoose.model('Role', RoleSchema);
 }
 
 const store = {
@@ -153,7 +204,32 @@ const store = {
       email: 'admin@example.com',
       password: crypto.createHash('sha256').update('admin123').digest('hex'),
       dob: '1990-01-01',
-      age: 36
+      age: 36,
+      role: 'Admin'
+    },
+    {
+      id: 'sagar-super-admin-id',
+      firstName: 'Sagar',
+      lastName: 'Manchadi',
+      email: 'sagarmanchadi324@gmail.com',
+      password: crypto.createHash('sha256').update('sagar@2410').digest('hex'),
+      dob: '1995-01-01',
+      age: 31,
+      role: 'Super Admin'
+    }
+  ],
+  roles: [
+    {
+      id: 'super-admin-role-id',
+      name: 'Super Admin',
+      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status'],
+      deleteAccess: true
+    },
+    {
+      id: 'admin-role-id',
+      name: 'Admin',
+      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing'],
+      deleteAccess: false
     }
   ],
   inventory: [],
@@ -559,10 +635,85 @@ async function deleteRestaurant(id) {
   return true;
 }
 
+async function listRoles() {
+  if (useDb) {
+    const rows = await Role.find({});
+    return rows.map(r => ({ id: r.id, name: r.name, sidebarAccess: r.sidebarAccess || [], deleteAccess: !!r.deleteAccess }));
+  }
+  return store.roles || [];
+}
+
+async function createRole(data) {
+  const id = uuidv4();
+  if (useDb) {
+    const role = new Role({
+      id,
+      name: data.name,
+      sidebarAccess: data.sidebarAccess || [],
+      deleteAccess: !!data.deleteAccess
+    });
+    await role.save();
+    return { id: role.id, name: role.name, sidebarAccess: role.sidebarAccess, deleteAccess: role.deleteAccess };
+  }
+  if (!store.roles) store.roles = [];
+  const role = { id, name: data.name, sidebarAccess: data.sidebarAccess || [], deleteAccess: !!data.deleteAccess };
+  store.roles.push(role);
+  return role;
+}
+
+async function getRole(id) {
+  if (useDb) {
+    const row = await Role.findOne({ id });
+    if (!row) return null;
+    return { id: row.id, name: row.name, sidebarAccess: row.sidebarAccess || [], deleteAccess: !!row.deleteAccess };
+  }
+  if (!store.roles) store.roles = [];
+  return store.roles.find(r => r.id === id) || null;
+}
+
+async function getRoleByName(name) {
+  if (useDb) {
+    const row = await Role.findOne({ name });
+    if (!row) return null;
+    return { id: row.id, name: row.name, sidebarAccess: row.sidebarAccess || [], deleteAccess: !!row.deleteAccess };
+  }
+  if (!store.roles) store.roles = [];
+  return store.roles.find(r => r.name === name) || null;
+}
+
+async function updateRole(id, data) {
+  if (useDb) {
+    const row = await Role.findOne({ id });
+    if (!row) return null;
+    if (data.name !== undefined) row.name = data.name;
+    if (data.sidebarAccess !== undefined) row.sidebarAccess = data.sidebarAccess;
+    if (data.deleteAccess !== undefined) row.deleteAccess = !!data.deleteAccess;
+    await row.save();
+    return { id: row.id, name: row.name, sidebarAccess: row.sidebarAccess, deleteAccess: row.deleteAccess };
+  }
+  if (!store.roles) store.roles = [];
+  const idx = store.roles.findIndex(r => r.id === id);
+  if (idx === -1) return null;
+  store.roles[idx] = { ...store.roles[idx], ...data };
+  return store.roles[idx];
+}
+
+async function deleteRole(id) {
+  if (useDb) {
+    const res = await Role.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+  if (!store.roles) store.roles = [];
+  const idx = store.roles.findIndex(r => r.id === id);
+  if (idx === -1) return false;
+  store.roles.splice(idx, 1);
+  return true;
+}
+
 async function listUsers() {
   if (useDb) {
     const rows = await User.find({});
-    return rows.map(r => ({ id: r.id, firstName: r.firstName, lastName: r.lastName, email: r.email, password: r.password, dob: r.dob, age: r.age }));
+    return rows.map(r => ({ id: r.id, firstName: r.firstName, lastName: r.lastName, email: r.email, password: r.password, dob: r.dob, age: r.age, role: r.role || 'Admin' }));
   }
   return store.users || [];
 }
@@ -577,22 +728,23 @@ async function createUser(data) {
       email: data.email,
       password: data.password,
       dob: data.dob,
-      age: data.age
+      age: data.age,
+      role: data.role || 'Admin'
     });
     await user.save();
-    return { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, dob: user.dob, age: user.age };
+    return { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, dob: user.dob, age: user.age, role: user.role };
   }
   if (!store.users) store.users = [];
-  const user = { id, firstName: data.firstName, lastName: data.lastName, email: data.email, password: data.password, dob: data.dob, age: data.age };
+  const user = { id, firstName: data.firstName, lastName: data.lastName, email: data.email, password: data.password, dob: data.dob, age: data.age, role: data.role || 'Admin' };
   store.users.push(user);
-  return { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, dob: user.dob, age: user.age };
+  return { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, dob: user.dob, age: user.age, role: user.role };
 }
 
 async function getUser(id) {
   if (useDb) {
     const row = await User.findOne({ id });
     if (!row) return null;
-    return { id: row.id, firstName: row.firstName, lastName: row.lastName, email: row.email, password: row.password, dob: row.dob, age: row.age };
+    return { id: row.id, firstName: row.firstName, lastName: row.lastName, email: row.email, password: row.password, dob: row.dob, age: row.age, role: row.role || 'Admin' };
   }
   if (!store.users) store.users = [];
   return store.users.find(u => u.id === id) || null;
@@ -602,7 +754,7 @@ async function getUserByEmail(email) {
   if (useDb) {
     const row = await User.findOne({ email });
     if (!row) return null;
-    return { id: row.id, firstName: row.firstName, lastName: row.lastName, email: row.email, password: row.password, dob: row.dob, age: row.age };
+    return { id: row.id, firstName: row.firstName, lastName: row.lastName, email: row.email, password: row.password, dob: row.dob, age: row.age, role: row.role || 'Admin' };
   }
   if (!store.users) store.users = [];
   return store.users.find(u => u.email === email) || null;
@@ -618,14 +770,15 @@ async function updateUser(id, data) {
     if (data.password !== undefined) row.password = data.password;
     if (data.dob !== undefined) row.dob = data.dob;
     if (data.age !== undefined) row.age = data.age;
+    if (data.role !== undefined) row.role = data.role;
     await row.save();
-    return { id: row.id, firstName: row.firstName, lastName: row.lastName, email: row.email, dob: row.dob, age: row.age };
+    return { id: row.id, firstName: row.firstName, lastName: row.lastName, email: row.email, dob: row.dob, age: row.age, role: row.role };
   }
   if (!store.users) store.users = [];
   const idx = store.users.findIndex(u => u.id === id);
   if (idx === -1) return null;
   store.users[idx] = { ...store.users[idx], ...data };
-  return { id: store.users[idx].id, firstName: store.users[idx].firstName, lastName: store.users[idx].lastName, email: store.users[idx].email, dob: store.users[idx].dob, age: store.users[idx].age };
+  return { id: store.users[idx].id, firstName: store.users[idx].firstName, lastName: store.users[idx].lastName, email: store.users[idx].email, dob: store.users[idx].dob, age: store.users[idx].age, role: store.users[idx].role };
 }
 
 async function deleteUser(id) {
@@ -703,7 +856,7 @@ async function listOrders(restaurantId) {
   if (useDb) {
     const query = restaurantId ? { restaurantId } : {};
     const rows = await Order.find(query);
-    return rows.map(r => ({ id: r.id, restaurantId: r.restaurantId, tableNo: r.tableNo, mobile: r.mobile, emailId: r.emailId, items: r.items, status: r.status, totalAmount: r.totalAmount, date: r.date, orderNumber: r.orderNumber, discount: r.discount || 0 }));
+    return rows.map(r => ({ id: r.id, restaurantId: r.restaurantId, tableNo: r.tableNo, mobile: r.mobile, emailId: r.emailId, items: r.items, status: r.status, totalAmount: r.totalAmount, date: r.date, orderNumber: r.orderNumber, discount: r.discount || 0, orderType: r.orderType || 'dinein' }));
   }
   if (!store.orders) store.orders = [];
   return store.orders.filter(o => !restaurantId || o.restaurantId === restaurantId);
@@ -743,7 +896,8 @@ async function createOrder(data) {
     totalAmount: data.totalAmount || 0,
     date: dateStr,
     orderNumber,
-    discount: data.discount || 0
+    discount: data.discount || 0,
+    orderType: data.orderType || 'dinein'
   };
   if (useDb) {
     const item = new Order(orderData);
@@ -759,7 +913,7 @@ async function getOrder(id) {
   if (useDb) {
     const row = await Order.findOne({ id });
     if (!row) return null;
-    return { id: row.id, restaurantId: row.restaurantId, tableNo: row.tableNo, mobile: row.mobile, emailId: row.emailId, items: row.items, status: row.status, totalAmount: row.totalAmount, date: row.date, orderNumber: row.orderNumber, discount: row.discount || 0 };
+    return { id: row.id, restaurantId: row.restaurantId, tableNo: row.tableNo, mobile: row.mobile, emailId: row.emailId, items: row.items, status: row.status, totalAmount: row.totalAmount, date: row.date, orderNumber: row.orderNumber, discount: row.discount || 0, orderType: row.orderType || 'dinein' };
   }
   if (!store.orders) store.orders = [];
   return store.orders.find(o => o.id === id) || null;
@@ -779,8 +933,9 @@ async function updateOrder(id, data) {
     if (data.date !== undefined) row.date = data.date;
     if (data.orderNumber !== undefined) row.orderNumber = data.orderNumber;
     if (data.discount !== undefined) row.discount = data.discount;
+    if (data.orderType !== undefined) row.orderType = data.orderType;
     await row.save();
-    return { id: row.id, restaurantId: row.restaurantId, tableNo: row.tableNo, mobile: row.mobile, emailId: row.emailId, items: row.items, status: row.status, totalAmount: row.totalAmount, date: row.date, orderNumber: row.orderNumber, discount: row.discount || 0 };
+    return { id: row.id, restaurantId: row.restaurantId, tableNo: row.tableNo, mobile: row.mobile, emailId: row.emailId, items: row.items, status: row.status, totalAmount: row.totalAmount, date: row.date, orderNumber: row.orderNumber, discount: row.discount || 0, orderType: row.orderType || 'dinein' };
   }
   if (!store.orders) store.orders = [];
   const idx = store.orders.findIndex(o => o.id === id);
@@ -912,8 +1067,126 @@ async function deleteCustomer(id) {
   return true;
 }
 
+async function cleanDatabase() {
+  if (useDb) {
+    await Restaurant.deleteMany({});
+    await FoodItem.deleteMany({});
+    await Expense.deleteMany({});
+    await Billing.deleteMany({});
+    await User.deleteMany({});
+    await Inventory.deleteMany({});
+    await Order.deleteMany({});
+    await Customer.deleteMany({});
+    await Role.deleteMany({});
+
+    const superAdminRole = new Role({
+      id: 'super-admin-role-id',
+      name: 'Super Admin',
+      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status'],
+      deleteAccess: true
+    });
+    const adminRole = new Role({
+      id: 'admin-role-id',
+      name: 'Admin',
+      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing'],
+      deleteAccess: false
+    });
+    await superAdminRole.save();
+    await adminRole.save();
+
+    const adminPasswordHash = crypto.createHash('sha256').update('sagar@2410').digest('hex');
+    const defaultSuperAdmin = new User({
+      id: 'sagar-super-admin-id',
+      firstName: 'Sagar',
+      lastName: 'Manchadi',
+      email: 'sagarmanchadi324@gmail.com',
+      password: adminPasswordHash,
+      dob: '1995-01-01',
+      age: 31,
+      role: 'Super Admin'
+    });
+    await defaultSuperAdmin.save();
+
+    const defaultAdminHash = crypto.createHash('sha256').update('admin123').digest('hex');
+    const defaultAdmin = new User({
+      id: 'default-admin-id',
+      firstName: 'Admin',
+      lastName: 'User',
+      email: 'admin@example.com',
+      password: defaultAdminHash,
+      dob: '1990-01-01',
+      age: 36,
+      role: 'Admin'
+    });
+    await defaultAdmin.save();
+
+    const defaultRest = new Restaurant({
+      id: 'default-restaurant-id',
+      name: 'Engineering Tadka Main Outlet',
+      address: '123 Tech Park, Silicon Valley'
+    });
+    await defaultRest.save();
+
+    console.log('✅ MongoDB database cleaned and default seeds applied.');
+  } else {
+    store.restaurants = [
+      {
+        id: 'default-restaurant-id',
+        name: 'Engineering Tadka Main Outlet',
+        address: '123 Tech Park, Silicon Valley'
+      }
+    ];
+    store.rooms = [];
+    store.bookings = [];
+    store.expenses = [];
+    store.users = [
+      {
+        id: 'default-admin-id',
+        firstName: 'Admin',
+        lastName: 'User',
+        email: 'admin@example.com',
+        password: crypto.createHash('sha256').update('admin123').digest('hex'),
+        dob: '1990-01-01',
+        age: 36,
+        role: 'Admin'
+      },
+      {
+        id: 'sagar-super-admin-id',
+        firstName: 'Sagar',
+        lastName: 'Manchadi',
+        email: 'sagarmanchadi324@gmail.com',
+        password: crypto.createHash('sha256').update('sagar@2410').digest('hex'),
+        dob: '1995-01-01',
+        age: 31,
+        role: 'Super Admin'
+      }
+    ];
+    store.roles = [
+      {
+        id: 'super-admin-role-id',
+        name: 'Super Admin',
+        sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status'],
+        deleteAccess: true
+      },
+      {
+        id: 'admin-role-id',
+        name: 'Admin',
+        sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing'],
+        deleteAccess: false
+      }
+    ];
+    store.inventory = [];
+    store.orders = [];
+    store.customers = [];
+    store.food = [];
+    store.billing = [];
+    console.log('✅ In-Memory database cleaned and default seeds applied.');
+  }
+}
+
 module.exports = {
   store,
+  cleanDatabase,
   listRestaurants,
   createRestaurant,
   getRestaurant,
@@ -940,6 +1213,12 @@ module.exports = {
   getUserByEmail,
   updateUser,
   deleteUser,
+  listRoles,
+  createRole,
+  getRole,
+  getRoleByName,
+  updateRole,
+  deleteRole,
   listInventory,
   createInventory,
   getInventory,

@@ -50,4 +50,16 @@ router.delete('/email-logs', (req, res) => {
   res.json({ message: 'Email logs cleared', count: count });
 });
 
+// Clean DB
+router.post('/clean-db', async (req, res) => {
+  try {
+    const { cleanDatabase } = require('../models/store');
+    await cleanDatabase();
+    res.json({ message: 'Database successfully cleaned and reset to default seeds.' });
+  } catch (err) {
+    console.error('Error cleaning database:', err);
+    res.status(500).json({ error: 'Failed to clean database' });
+  }
+});
+
 module.exports = router;

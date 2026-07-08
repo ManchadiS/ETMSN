@@ -14,11 +14,11 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { restaurantId, tableNo, mobile, emailId, items, status, totalAmount, date, discount } = req.body;
+  const { restaurantId, tableNo, mobile, emailId, items, status, totalAmount, date, discount, orderType } = req.body;
   if (!restaurantId) {
     return res.status(400).json({ error: 'restaurantId is required' });
   }
-  const created = await createOrder({ restaurantId, tableNo, mobile, emailId, items, status, totalAmount, date, discount });
+  const created = await createOrder({ restaurantId, tableNo, mobile, emailId, items, status, totalAmount, date, discount, orderType });
   res.status(201).json(created);
 });
 
