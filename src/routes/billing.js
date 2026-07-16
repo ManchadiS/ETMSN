@@ -168,12 +168,12 @@ router.get('/:id/view', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { amount, restaurantId, date, description, status, mobile, emailId, cgst, sgst, foodItems, orderNumber, discount } = req.body;
+  const { amount, restaurantId, date, description, status, mobile, emailId, cgst, sgst, foodItems, orderNumber, discount, paymentMode } = req.body;
   if (amount == null || !restaurantId) {
     return res.status(400).json({ error: 'amount and restaurantId are required' });
   }
   
-  const created = await createBilling({ amount, restaurantId, date, description, status, mobile, emailId, cgst, sgst, foodItems, orderNumber, discount });
+  const created = await createBilling({ amount, restaurantId, date, description, status, mobile, emailId, cgst, sgst, foodItems, orderNumber, discount, paymentMode });
 
   if (emailId) {
     try {

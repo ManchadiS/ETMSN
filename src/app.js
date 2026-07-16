@@ -15,8 +15,11 @@ const ordersRouter = require('./routes/orders');
 const customersRouter = require('./routes/customers');
 const rolesRouter = require('./routes/roles');
 
+const path = require('path');
+
 const app = express();
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // Request logger
 app.use((req, res, next) => {

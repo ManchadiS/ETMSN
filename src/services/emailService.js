@@ -73,15 +73,15 @@ function formatBill(billing, restaurant) {
   const discountAmount = itemsTotal - total;
 
   const billLines = [
-    `BILL / INVOICE - ${restaurant && restaurant.name ? restaurant.name : 'Engineering Tadka'}`,
+    `BILL - ${restaurant && restaurant.name ? restaurant.name : 'Engineering Tadka'}`,
   ];
   if (billing.orderNumber) {
-    billLines.push(`Order Number: #${billing.orderNumber}`);
+    billLines.push(`Bill No: #${billing.orderNumber}`);
   }
   billLines.push(
     `Date: ${billing.date || new Date().toISOString().split('T')[0]}`,
     `Time: ${new Date().toLocaleTimeString()}`,
-    `Contact: ${billing.mobile || 'N/A'}`,
+    `Contact: 9870859624`,
     '',
     itemsText,
     ''
@@ -130,7 +130,7 @@ function createBillPdf(billing, restaurant) {
     const billTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
     const colors = {
-      primary: '#1a1a2e',
+      primary: '#f25c05',
       accent: '#e74c3c',
       muted: '#666666',
       lightBg: '#f4f4f4',
@@ -140,18 +140,30 @@ function createBillPdf(billing, restaurant) {
 
     let y = margin;
 
-    // Header
+    // Header background
     doc.rect(margin, y, contentWidth, 56).fill(colors.primary);
-    doc.fillColor(colors.white).font('Helvetica-Bold').fontSize(20)
-      .text(restaurantName, margin + 16, y + 14, { width: contentWidth - 32 });
-    doc.font('Helvetica').fontSize(10)
-      .text(`Contact: ${billing.mobile || '9870859624'}`, margin + 16, y + 38);
-    doc.text(`Date: ${billDate}`, margin + contentWidth - 120, y + 16, { width: 104, align: 'right' });
+    
+    // Logo Icon: Solid White Circle with Orange ET text
+    const logoX = margin + 16;
+    const logoY = y + 10;
+    const logoSize = 36;
+    doc.circle(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2).fill(colors.white);
+    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(14)
+      .text('ET', logoX, logoY + 11, { width: logoSize, align: 'center' });
+
+    // Brand Name and Details
+    doc.fillColor(colors.white).font('Helvetica-Bold').fontSize(18)
+      .text(restaurantName, logoX + logoSize + 12, y + 12, { width: contentWidth - logoSize - 160 });
+    doc.font('Helvetica').fontSize(9)
+      .text(`Contact: 9870859624`, logoX + logoSize + 12, y + 34);
+      
+    doc.fillColor(colors.white).font('Helvetica').fontSize(10)
+      .text(`Date: ${billDate}`, margin + contentWidth - 120, y + 16, { width: 104, align: 'right' });
     doc.text(`Time: ${billTime}`, margin + contentWidth - 120, y + 30, { width: 104, align: 'right' });
 
     y += 72;
 
-    const invoiceTitle = billing.orderNumber ? `TAX INVOICE (Order #${billing.orderNumber})` : 'TAX INVOICE';
+    const invoiceTitle = billing.orderNumber ? `BILL NO. #${billing.orderNumber}` : 'BILL NO.';
     doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(13).text(invoiceTitle, margin, y);
     y += 22;
 
@@ -272,19 +284,14 @@ function createBillPdf(billing, restaurant) {
 
     y += 24;
 
-    const infoBoxHeight = billing.description ? 58 : 44;
+    const infoBoxHeight = 36;
     doc.rect(margin, y, contentWidth * 0.55, infoBoxHeight).stroke(colors.border);
     doc.font('Helvetica').fontSize(10).fillColor('#222222');
-    doc.text(`Payment Mode: ${billing.paymentMode || 'Cash'}`, margin + 12, y + 12);
-    doc.text(`Status: ${(billing.status || 'pending').toUpperCase()}`, margin + 12, y + 28);
-    if (billing.description) {
-      doc.fontSize(9).fillColor(colors.muted)
-        .text(`Notes: ${billing.description}`, margin + 12, y + 42, { width: contentWidth * 0.55 - 24 });
-    }
+    doc.text(`Payment Mode: ${billing.paymentMode || 'Cash'}`, margin + 12, y + 14);
 
     y += infoBoxHeight + 24;
-    doc.font('Helvetica').fontSize(10).fillColor(colors.muted)
-      .text('Thank you for dining with us!', margin, y, { width: contentWidth, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(colors.primary)
+      .text('Thank you for Visiting Engineering Tadka Where Hunger Meets Innovation.', margin, y, { width: contentWidth, align: 'center' });
 
     doc.end();
   });
