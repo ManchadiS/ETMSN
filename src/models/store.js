@@ -45,11 +45,9 @@ if (useDb) {
           role: 'Super Admin'
         });
         await defaultSuperAdmin.save();
-        console.log('✅ Seeded default Super Admin: sagarmanchadi324@gmail.com / sagar@2410');
       } else {
         superAdminUser.password = adminPasswordHash;
         await superAdminUser.save();
-        console.log('✅ Updated default Super Admin password: sagarmanchadi324@gmail.com / sagar@2410');
       }
 
       const adminUser = await User.findOne({ email: 'admin@example.com' });
@@ -370,7 +368,7 @@ async function checkLoyaltyExpiry(customer) {
   const lastActivity = customer.lastLoyaltyActivity ? new Date(customer.lastLoyaltyActivity) : new Date();
   const diffTime = now - lastActivity;
   const diffDays = diffTime / (1000 * 60 * 60 * 24);
-  
+
   if (diffDays > expiryDays && customer.loyaltyPoints > 0) {
     customer.loyaltyPoints = 0;
     if (useDb && customer.save) {
@@ -387,7 +385,7 @@ function checkLoyaltyExpiryInMem(c) {
   const lastActivity = c.lastLoyaltyActivity ? new Date(c.lastLoyaltyActivity) : new Date();
   const diffTime = now - lastActivity;
   const diffDays = diffTime / (1000 * 60 * 60 * 24);
-  
+
   if (diffDays > expiryDays && c.loyaltyPoints > 0) {
     c.loyaltyPoints = 0;
   }
@@ -428,7 +426,7 @@ async function createBilling(data) {
         if (!customer && data.emailId) {
           customer = await Customer.findOne({ emailId: data.emailId });
         }
-        
+
         if (customer) {
           await checkLoyaltyExpiry(customer);
           customer.loyaltyPoints = (customer.loyaltyPoints || 0) + points;
@@ -471,7 +469,7 @@ async function createBilling(data) {
     if (!customer && data.emailId) {
       customer = store.customers.find(c => c.emailId === data.emailId);
     }
-    
+
     if (customer) {
       checkLoyaltyExpiryInMem(customer);
       customer.loyaltyPoints = (customer.loyaltyPoints || 0) + points;
@@ -925,8 +923,8 @@ async function listOrders(restaurantId, includePending = false) {
     }));
   }
   if (!store.orders) store.orders = [];
-  return store.orders.filter(o => 
-    (!restaurantId || o.restaurantId === restaurantId) && 
+  return store.orders.filter(o =>
+    (!restaurantId || o.restaurantId === restaurantId) &&
     (includePending || o.status !== 'pending_payment')
   );
 }
@@ -934,7 +932,7 @@ async function listOrders(restaurantId, includePending = false) {
 async function createOrder(data) {
   const id = uuidv4();
   const dateStr = data.date || new Date().toISOString().split('T')[0];
-  
+
   // Calculate next orderNumber
   let orderNumber = 1;
   if (useDb) {
@@ -1083,7 +1081,7 @@ async function lookupCustomer(query) {
     await checkLoyaltyExpiry(row);
     return { id: row.id, mobile: row.mobile, emailId: row.emailId, loyaltyPoints: row.loyaltyPoints, lastLoyaltyActivity: row.lastLoyaltyActivity };
   }
-  
+
   if (!store.customers) store.customers = [];
   let row = null;
   if (query.mobile) {
