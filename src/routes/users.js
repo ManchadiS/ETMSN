@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const {
   listUsers,
   createUser,
@@ -10,6 +11,15 @@ const {
   deleteUser,
   getRoleByName
 } = require('../models/store');
+
+function generateToken(user) {
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role },
+    process.env.JWT_SECRET || 'super_secret_tadka_token_key',
+    { expiresIn: '1d' }
+  );
+}
+
 
 // Utility to hash passwords using SHA-256
 function hashPassword(password) {
@@ -64,7 +74,8 @@ router.post('/login', async (req, res) => {
   // Success: Return user details without password
   const { password: _, ...userInfo } = user;
   const resolved = await resolveUserRights(userInfo);
-  res.json(resolved);
+  const token = generateToken(resolved);
+  res.json({ ...resolved, token });
 });
 
 // POST /users/register
@@ -91,7 +102,8 @@ router.post('/register', async (req, res) => {
   });
 
   const resolved = await resolveUserRights(created);
-  res.status(201).json(resolved);
+  const token = generateToken(resolved);
+  res.status(201).json({ ...resolved, token });
 });
 
 // GET /users (List all users)

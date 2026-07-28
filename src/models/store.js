@@ -198,7 +198,12 @@ if (useDb) {
     emailId: { type: String },
     orderNumber: { type: Number },
     discount: { type: Number, default: 0 },
-    orderType: { type: String, default: 'dinein' }
+    orderType: { type: String, default: 'dinein' },
+    paymentMode: { type: String, default: 'Cash' },
+    paymentStatus: { type: String, default: 'pending' },
+    razorpayOrderId: { type: String },
+    razorpayPaymentId: { type: String },
+    razorpaySignature: { type: String }
   }, { timestamps: true, id: false });
 
   const CustomerSchema = new mongoose.Schema({
@@ -892,14 +897,38 @@ async function deleteInventory(id) {
   store.inventory.splice(idx, 1);
   return true;
 }
-async function listOrders(restaurantId) {
+async function listOrders(restaurantId, includePending = false) {
   if (useDb) {
     const query = restaurantId ? { restaurantId } : {};
+    if (!includePending) {
+      query.status = { $ne: 'pending_payment' };
+    }
     const rows = await Order.find(query);
-    return rows.map(r => ({ id: r.id, restaurantId: r.restaurantId, tableNo: r.tableNo, mobile: r.mobile, emailId: r.emailId, items: r.items, status: r.status, totalAmount: r.totalAmount, date: r.date, orderNumber: r.orderNumber, discount: r.discount || 0, orderType: r.orderType || 'dinein' }));
+    return rows.map(r => ({
+      id: r.id,
+      restaurantId: r.restaurantId,
+      tableNo: r.tableNo,
+      mobile: r.mobile,
+      emailId: r.emailId,
+      items: r.items,
+      status: r.status,
+      totalAmount: r.totalAmount,
+      date: r.date,
+      orderNumber: r.orderNumber,
+      discount: r.discount || 0,
+      orderType: r.orderType || 'dinein',
+      paymentMode: r.paymentMode || 'Cash',
+      paymentStatus: r.paymentStatus || 'pending',
+      razorpayOrderId: r.razorpayOrderId,
+      razorpayPaymentId: r.razorpayPaymentId,
+      razorpaySignature: r.razorpaySignature
+    }));
   }
   if (!store.orders) store.orders = [];
-  return store.orders.filter(o => !restaurantId || o.restaurantId === restaurantId);
+  return store.orders.filter(o => 
+    (!restaurantId || o.restaurantId === restaurantId) && 
+    (includePending || o.status !== 'pending_payment')
+  );
 }
 
 async function createOrder(data) {
@@ -937,7 +966,12 @@ async function createOrder(data) {
     date: dateStr,
     orderNumber,
     discount: data.discount || 0,
-    orderType: data.orderType || 'dinein'
+    orderType: data.orderType || 'dinein',
+    paymentMode: data.paymentMode || 'Cash',
+    paymentStatus: data.paymentStatus || 'pending',
+    razorpayOrderId: data.razorpayOrderId || null,
+    razorpayPaymentId: data.razorpayPaymentId || null,
+    razorpaySignature: data.razorpaySignature || null
   };
   if (useDb) {
     const item = new Order(orderData);
@@ -953,7 +987,25 @@ async function getOrder(id) {
   if (useDb) {
     const row = await Order.findOne({ id });
     if (!row) return null;
-    return { id: row.id, restaurantId: row.restaurantId, tableNo: row.tableNo, mobile: row.mobile, emailId: row.emailId, items: row.items, status: row.status, totalAmount: row.totalAmount, date: row.date, orderNumber: row.orderNumber, discount: row.discount || 0, orderType: row.orderType || 'dinein' };
+    return {
+      id: row.id,
+      restaurantId: row.restaurantId,
+      tableNo: row.tableNo,
+      mobile: row.mobile,
+      emailId: row.emailId,
+      items: row.items,
+      status: row.status,
+      totalAmount: row.totalAmount,
+      date: row.date,
+      orderNumber: row.orderNumber,
+      discount: row.discount || 0,
+      orderType: row.orderType || 'dinein',
+      paymentMode: row.paymentMode || 'Cash',
+      paymentStatus: row.paymentStatus || 'pending',
+      razorpayOrderId: row.razorpayOrderId,
+      razorpayPaymentId: row.razorpayPaymentId,
+      razorpaySignature: row.razorpaySignature
+    };
   }
   if (!store.orders) store.orders = [];
   return store.orders.find(o => o.id === id) || null;
@@ -974,8 +1026,31 @@ async function updateOrder(id, data) {
     if (data.orderNumber !== undefined) row.orderNumber = data.orderNumber;
     if (data.discount !== undefined) row.discount = data.discount;
     if (data.orderType !== undefined) row.orderType = data.orderType;
+    if (data.paymentMode !== undefined) row.paymentMode = data.paymentMode;
+    if (data.paymentStatus !== undefined) row.paymentStatus = data.paymentStatus;
+    if (data.razorpayOrderId !== undefined) row.razorpayOrderId = data.razorpayOrderId;
+    if (data.razorpayPaymentId !== undefined) row.razorpayPaymentId = data.razorpayPaymentId;
+    if (data.razorpaySignature !== undefined) row.razorpaySignature = data.razorpaySignature;
     await row.save();
-    return { id: row.id, restaurantId: row.restaurantId, tableNo: row.tableNo, mobile: row.mobile, emailId: row.emailId, items: row.items, status: row.status, totalAmount: row.totalAmount, date: row.date, orderNumber: row.orderNumber, discount: row.discount || 0, orderType: row.orderType || 'dinein' };
+    return {
+      id: row.id,
+      restaurantId: row.restaurantId,
+      tableNo: row.tableNo,
+      mobile: row.mobile,
+      emailId: row.emailId,
+      items: row.items,
+      status: row.status,
+      totalAmount: row.totalAmount,
+      date: row.date,
+      orderNumber: row.orderNumber,
+      discount: row.discount || 0,
+      orderType: row.orderType || 'dinein',
+      paymentMode: row.paymentMode || 'Cash',
+      paymentStatus: row.paymentStatus || 'pending',
+      razorpayOrderId: row.razorpayOrderId,
+      razorpayPaymentId: row.razorpayPaymentId,
+      razorpaySignature: row.razorpaySignature
+    };
   }
   if (!store.orders) store.orders = [];
   const idx = store.orders.findIndex(o => o.id === id);

@@ -4,15 +4,26 @@ const app = require('../src/app');
 describe('Orders API', () => {
   let created;
   let restaurantId;
+  let token;
 
   beforeAll(async () => {
-    const res = await request(app).post('/api/v1/restaurants').send({ name: 'Orders Test Restaurant', address: '456 Order Ave' });
+    const loginRes = await request(app)
+      .post('/api/v1/users/login')
+      .send({ email: 'admin@example.com', password: 'admin123' });
+    token = loginRes.body.token;
+
+    const res = await request(app)
+      .post('/api/v1/restaurants')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Orders Test Restaurant', address: '456 Order Ave' });
     restaurantId = res.body.id;
   });
 
   afterAll(async () => {
     if (restaurantId) {
-      await request(app).delete(`/api/v1/restaurants/${restaurantId}`);
+      await request(app)
+        .delete(`/api/v1/restaurants/${restaurantId}`)
+        .set('Authorization', `Bearer ${token}`);
     }
   });
 
@@ -35,7 +46,9 @@ describe('Orders API', () => {
   });
 
   test('GET /api/v1/orders should list orders', async () => {
-    const res = await request(app).get('/api/v1/orders');
+    const res = await request(app)
+      .get('/api/v1/orders')
+      .set('Authorization', `Bearer ${token}`);
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     expect(res.body.length).toBeGreaterThanOrEqual(1);
@@ -48,14 +61,19 @@ describe('Orders API', () => {
   });
 
   test('PUT /api/v1/orders/:id should update the order', async () => {
-    const res = await request(app).put(`/api/v1/orders/${created.id}`).send({ status: 'preparing', tableNo: 'Table 18' });
+    const res = await request(app)
+      .put(`/api/v1/orders/${created.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'preparing', tableNo: 'Table 18' });
     expect(res.statusCode).toBe(200);
     expect(res.body.status).toBe('preparing');
     expect(res.body.tableNo).toBe('Table 18');
   });
 
   test('DELETE /api/v1/orders/:id should delete the order', async () => {
-    const res = await request(app).delete(`/api/v1/orders/${created.id}`);
+    const res = await request(app)
+      .delete(`/api/v1/orders/${created.id}`)
+      .set('Authorization', `Bearer ${token}`);
     expect(res.statusCode).toBe(204);
   });
 });

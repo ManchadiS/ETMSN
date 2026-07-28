@@ -3,10 +3,12 @@ const app = require('../src/app');
 
 describe('Users API', () => {
   let userId;
+  let authToken;
+  const uniqueId = Math.random().toString(36).substring(2, 10);
   const testUser = {
     firstName: 'John',
     lastName: 'Doe',
-    email: 'john.doe@example.com',
+    email: `john.doe.${uniqueId}@example.com`,
     password: 'password123',
     dob: '1995-05-15',
     age: 31
@@ -20,7 +22,9 @@ describe('Users API', () => {
     expect(res.body).toHaveProperty('id');
     expect(res.body.email).toBe(testUser.email);
     expect(res.body).not.toHaveProperty('password');
+    expect(res.body).toHaveProperty('token');
     userId = res.body.id;
+    authToken = res.body.token;
   });
 
   test('POST /api/v1/users/register with duplicate email should fail', async () => {
@@ -41,6 +45,7 @@ describe('Users API', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.id).toBe(userId);
     expect(res.body.firstName).toBe(testUser.firstName);
+    expect(res.body).toHaveProperty('token');
   });
 
   test('POST /api/v1/users/login with incorrect credentials should fail', async () => {
@@ -54,7 +59,9 @@ describe('Users API', () => {
   });
 
   test('GET /api/v1/users should list all users without password', async () => {
-    const res = await request(app).get('/api/v1/users');
+    const res = await request(app)
+      .get('/api/v1/users')
+      .set('Authorization', `Bearer ${authToken}`);
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     const found = res.body.find(u => u.id === userId);
@@ -63,7 +70,9 @@ describe('Users API', () => {
   });
 
   test('GET /api/v1/users/:id should return details of the user', async () => {
-    const res = await request(app).get(`/api/v1/users/${userId}`);
+    const res = await request(app)
+      .get(`/api/v1/users/${userId}`)
+      .set('Authorization', `Bearer ${authToken}`);
     expect(res.statusCode).toBe(200);
     expect(res.body.email).toBe(testUser.email);
     expect(res.body).not.toHaveProperty('password');
@@ -72,6 +81,7 @@ describe('Users API', () => {
   test('PUT /api/v1/users/:id should update user details', async () => {
     const res = await request(app)
       .put(`/api/v1/users/${userId}`)
+      .set('Authorization', `Bearer ${authToken}`)
       .send({
         firstName: 'Johnny',
         age: 32
@@ -82,10 +92,14 @@ describe('Users API', () => {
   });
 
   test('DELETE /api/v1/users/:id should remove the user', async () => {
-    const res = await request(app).delete(`/api/v1/users/${userId}`);
+    const res = await request(app)
+      .delete(`/api/v1/users/${userId}`)
+      .set('Authorization', `Bearer ${authToken}`);
     expect(res.statusCode).toBe(204);
 
-    const checkRes = await request(app).get(`/api/v1/users/${userId}`);
+    const checkRes = await request(app)
+      .get(`/api/v1/users/${userId}`)
+      .set('Authorization', `Bearer ${authToken}`);
     expect(checkRes.statusCode).toBe(404);
   });
 });

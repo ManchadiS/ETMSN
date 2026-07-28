@@ -3,9 +3,20 @@ const app = require('../src/app');
 
 describe('Restaurants API', () => {
   let created;
+  let token;
+
+  beforeAll(async () => {
+    const res = await request(app)
+      .post('/api/v1/users/login')
+      .send({ email: 'admin@example.com', password: 'admin123' });
+    token = res.body.token;
+  });
 
   test('POST /api/v1/restaurants should create a restaurant', async () => {
-    const res = await request(app).post('/api/v1/restaurants').send({ name: 'Test Restaurant', address: '123 Main St' });
+    const res = await request(app)
+      .post('/api/v1/restaurants')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Test Restaurant', address: '123 Main St' });
     expect(res.statusCode).toBe(201);
     expect(res.body).toHaveProperty('id');
     expect(res.body.name).toBe('Test Restaurant');
@@ -19,19 +30,26 @@ describe('Restaurants API', () => {
   });
 
   test('GET /api/v1/restaurants/:id should return the restaurant', async () => {
-    const res = await request(app).get(`/api/v1/restaurants/${created.id}`);
+    const res = await request(app)
+      .get(`/api/v1/restaurants/${created.id}`)
+      .set('Authorization', `Bearer ${token}`);
     expect(res.statusCode).toBe(200);
     expect(res.body.name).toBe('Test Restaurant');
   });
 
   test('PUT /api/v1/restaurants/:id should update the restaurant', async () => {
-    const res = await request(app).put(`/api/v1/restaurants/${created.id}`).send({ name: 'Updated Restaurant' });
+    const res = await request(app)
+      .put(`/api/v1/restaurants/${created.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Updated Restaurant' });
     expect(res.statusCode).toBe(200);
     expect(res.body.name).toBe('Updated Restaurant');
   });
 
   test('DELETE /api/v1/restaurants/:id should delete the restaurant', async () => {
-    const res = await request(app).delete(`/api/v1/restaurants/${created.id}`);
+    const res = await request(app)
+      .delete(`/api/v1/restaurants/${created.id}`)
+      .set('Authorization', `Bearer ${token}`);
     expect(res.statusCode).toBe(204);
   });
 });

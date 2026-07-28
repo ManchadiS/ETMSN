@@ -38,6 +38,10 @@ app.use((req, res, next) => {
   next();
 });
 
+const authMiddleware = require('./middleware/auth');
+
+app.use('/api/v1', authMiddleware);
+
 app.use('/api/v1/restaurants', restaurantsRouter);
 app.use('/api/v1/expenses', expensesRouter);
 app.use('/api/v1/billing', billingRouter);

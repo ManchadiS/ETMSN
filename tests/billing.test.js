@@ -4,15 +4,26 @@ const app = require('../src/app');
 describe('Billing API', () => {
   let created;
   let restaurantId;
+  let token;
 
   beforeAll(async () => {
-    const res = await request(app).post('/api/v1/restaurants').send({ name: 'Billing Test Restaurant', address: '123 Main St' });
+    const loginRes = await request(app)
+      .post('/api/v1/users/login')
+      .send({ email: 'admin@example.com', password: 'admin123' });
+    token = loginRes.body.token;
+
+    const res = await request(app)
+      .post('/api/v1/restaurants')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Billing Test Restaurant', address: '123 Main St' });
     restaurantId = res.body.id;
   });
 
   afterAll(async () => {
     if (restaurantId) {
-      await request(app).delete(`/api/v1/restaurants/${restaurantId}`);
+      await request(app)
+        .delete(`/api/v1/restaurants/${restaurantId}`)
+        .set('Authorization', `Bearer ${token}`);
     }
   });
 
@@ -51,25 +62,34 @@ describe('Billing API', () => {
   });
 
   test('GET /api/v1/billing should list billings', async () => {
-    const res = await request(app).get('/api/v1/billing');
+    const res = await request(app)
+      .get('/api/v1/billing')
+      .set('Authorization', `Bearer ${token}`);
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
 
   test('GET /api/v1/billing/:id should return the billing', async () => {
-    const res = await request(app).get(`/api/v1/billing/${created.id}`);
+    const res = await request(app)
+      .get(`/api/v1/billing/${created.id}`)
+      .set('Authorization', `Bearer ${token}`);
     expect(res.statusCode).toBe(200);
     expect(res.body.amount).toBeCloseTo(100.0);
   });
 
   test('PUT /api/v1/billing/:id should update the billing', async () => {
-    const res = await request(app).put(`/api/v1/billing/${created.id}`).send({ status: 'paid' });
+    const res = await request(app)
+      .put(`/api/v1/billing/${created.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'paid' });
     expect(res.statusCode).toBe(200);
     expect(res.body.status).toBe('paid');
   });
 
   test('DELETE /api/v1/billing/:id should delete the billing', async () => {
-    const res = await request(app).delete(`/api/v1/billing/${created.id}`);
+    const res = await request(app)
+      .delete(`/api/v1/billing/${created.id}`)
+      .set('Authorization', `Bearer ${token}`);
     expect(res.statusCode).toBe(204);
   });
 });
