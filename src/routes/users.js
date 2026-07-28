@@ -14,7 +14,13 @@ const {
 
 function generateToken(user) {
   return jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
+    { 
+      id: user.id, 
+      email: user.email, 
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName
+    },
     process.env.JWT_SECRET || 'super_secret_tadka_token_key',
     { expiresIn: '1d' }
   );

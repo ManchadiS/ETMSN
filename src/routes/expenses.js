@@ -48,12 +48,14 @@ router.post('/', async (req, res) => {
   if (amount == null || !restaurantId) {
     return res.status(400).json({ error: 'amount and restaurantId are required' });
   }
-  const created = await createExpense({ amount, description, date, category, restaurantId, imageUrl });
+  const createdBy = req.user ? `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || req.user.email : 'System';
+  const created = await createExpense({ amount, description, date, category, restaurantId, imageUrl, createdBy });
   res.status(201).json(created);
 });
 
 router.put('/:id', async (req, res) => {
-  const updated = await updateExpense(req.params.id, req.body);
+  const updatedBy = req.user ? `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || req.user.email : 'System';
+  const updated = await updateExpense(req.params.id, { ...req.body, updatedBy });
   if (!updated) return res.status(404).json({ error: 'Expense not found' });
   res.json(updated);
 });

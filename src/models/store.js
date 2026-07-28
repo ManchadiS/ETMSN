@@ -140,7 +140,9 @@ if (useDb) {
     description: { type: String },
     date: { type: String },
     category: { type: String },
-    imageUrl: { type: String }
+    imageUrl: { type: String },
+    createdBy: { type: String },
+    updatedBy: { type: String }
   }, { timestamps: true, id: false });
 
   const BillingSchema = new mongoose.Schema({
@@ -543,7 +545,19 @@ async function listExpenses(restaurantId) {
   if (useDb) {
     const query = restaurantId ? { restaurantId } : {};
     const rows = await Expense.find(query);
-    return rows.map(r => ({ id: r.id, restaurantId: r.restaurantId, amount: r.amount, description: r.description, date: r.date, category: r.category, imageUrl: r.imageUrl }));
+    return rows.map(r => ({ 
+      id: r.id, 
+      restaurantId: r.restaurantId, 
+      amount: r.amount, 
+      description: r.description, 
+      date: r.date, 
+      category: r.category, 
+      imageUrl: r.imageUrl,
+      createdBy: r.createdBy,
+      updatedBy: r.updatedBy,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }));
   }
   return (store.expenses || []).filter(e => !restaurantId || e.restaurantId === restaurantId);
 }
@@ -558,12 +572,27 @@ async function createExpense(data) {
       description: data.description || null,
       date: data.date || null,
       category: data.category || null,
-      imageUrl: data.imageUrl || null
+      imageUrl: data.imageUrl || null,
+      createdBy: data.createdBy || null,
+      updatedBy: data.updatedBy || null
     });
     await expense.save();
-    return { id: expense.id, restaurantId: expense.restaurantId, amount: expense.amount, description: expense.description, date: expense.date, category: expense.category, imageUrl: expense.imageUrl };
+    return { 
+      id: expense.id, 
+      restaurantId: expense.restaurantId, 
+      amount: expense.amount, 
+      description: expense.description, 
+      date: expense.date, 
+      category: expense.category, 
+      imageUrl: expense.imageUrl,
+      createdBy: expense.createdBy,
+      updatedBy: expense.updatedBy,
+      createdAt: expense.createdAt,
+      updatedAt: expense.updatedAt
+    };
   }
   if (!store.expenses) store.expenses = [];
+  const now = new Date().toISOString();
   const expense = {
     id,
     restaurantId: data.restaurantId,
@@ -571,7 +600,11 @@ async function createExpense(data) {
     description: data.description || null,
     date: data.date || null,
     category: data.category || null,
-    imageUrl: data.imageUrl || null
+    imageUrl: data.imageUrl || null,
+    createdBy: data.createdBy || 'System',
+    updatedBy: data.updatedBy || null,
+    createdAt: now,
+    updatedAt: now
   };
   store.expenses.push(expense);
   return expense;
@@ -581,7 +614,19 @@ async function getExpense(id) {
   if (useDb) {
     const row = await Expense.findOne({ id });
     if (!row) return null;
-    return { id: row.id, restaurantId: row.restaurantId, amount: row.amount, description: row.description, date: row.date, category: row.category, imageUrl: row.imageUrl };
+    return { 
+      id: row.id, 
+      restaurantId: row.restaurantId, 
+      amount: row.amount, 
+      description: row.description, 
+      date: row.date, 
+      category: row.category, 
+      imageUrl: row.imageUrl,
+      createdBy: row.createdBy,
+      updatedBy: row.updatedBy,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
   }
   if (!store.expenses) store.expenses = [];
   return store.expenses.find(e => e.id === id) || null;
@@ -597,13 +642,30 @@ async function updateExpense(id, data) {
     if (data.category !== undefined) row.category = data.category;
     if (data.restaurantId !== undefined) row.restaurantId = data.restaurantId;
     if (data.imageUrl !== undefined) row.imageUrl = data.imageUrl;
+    if (data.updatedBy !== undefined) row.updatedBy = data.updatedBy;
     await row.save();
-    return { id: row.id, restaurantId: row.restaurantId, amount: row.amount, description: row.description, date: row.date, category: row.category, imageUrl: row.imageUrl };
+    return { 
+      id: row.id, 
+      restaurantId: row.restaurantId, 
+      amount: row.amount, 
+      description: row.description, 
+      date: row.date, 
+      category: row.category, 
+      imageUrl: row.imageUrl,
+      createdBy: row.createdBy,
+      updatedBy: row.updatedBy,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
   }
   if (!store.expenses) store.expenses = [];
   const idx = store.expenses.findIndex(e => e.id === id);
   if (idx === -1) return null;
-  store.expenses[idx] = { ...store.expenses[idx], ...data };
+  store.expenses[idx] = { 
+    ...store.expenses[idx], 
+    ...data,
+    updatedAt: new Date().toISOString()
+  };
   return store.expenses[idx];
 }
 
