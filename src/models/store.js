@@ -130,7 +130,8 @@ if (useDb) {
     name: { type: String, required: true },
     price: { type: Number, required: true },
     description: { type: String },
-    category: { type: String }
+    category: { type: String },
+    active: { type: Boolean, default: true }
   }, { timestamps: true, id: false });
 
   const ExpenseSchema = new mongoose.Schema({
@@ -281,9 +282,9 @@ async function listFoodItems(restaurantId) {
   if (useDb) {
     const query = restaurantId ? { restaurantId } : {};
     const items = await FoodItem.find(query);
-    return items.map(r => ({ id: r.id, restaurantId: r.restaurantId, name: r.name, price: r.price, description: r.description, category: r.category }));
+    return items.map(r => ({ id: r.id, restaurantId: r.restaurantId, name: r.name, price: r.price, description: r.description, category: r.category, active: r.active !== false }));
   }
-  return (store.foodItems || []).filter(f => !restaurantId || f.restaurantId === restaurantId);
+  return (store.foodItems || []).filter(f => !restaurantId || f.restaurantId === restaurantId).map(f => ({ ...f, active: f.active !== false }));
 }
 
 async function createFoodItem(data) {
@@ -295,10 +296,11 @@ async function createFoodItem(data) {
       name: data.name,
       price: data.price,
       description: data.description || null,
-      category: data.category || null
+      category: data.category || null,
+      active: data.active !== undefined ? data.active : true
     });
     await item.save();
-    return { id: item.id, restaurantId: item.restaurantId, name: item.name, price: item.price, description: item.description, category: item.category };
+    return { id: item.id, restaurantId: item.restaurantId, name: item.name, price: item.price, description: item.description, category: item.category, active: item.active };
   }
   if (!store.foodItems) store.foodItems = [];
   const item = {
@@ -307,7 +309,8 @@ async function createFoodItem(data) {
     name: data.name,
     price: data.price,
     description: data.description || null,
-    category: data.category || null
+    category: data.category || null,
+    active: data.active !== undefined ? data.active : true
   };
   store.foodItems.push(item);
   return item;
@@ -317,10 +320,12 @@ async function getFoodItem(id) {
   if (useDb) {
     const item = await FoodItem.findOne({ id });
     if (!item) return null;
-    return { id: item.id, restaurantId: item.restaurantId, name: item.name, price: item.price, description: item.description, category: item.category };
+    return { id: item.id, restaurantId: item.restaurantId, name: item.name, price: item.price, description: item.description, category: item.category, active: item.active !== false };
   }
   if (!store.foodItems) store.foodItems = [];
-  return store.foodItems.find(f => f.id === id) || null;
+  const found = store.foodItems.find(f => f.id === id);
+  if (!found) return null;
+  return { ...found, active: found.active !== false };
 }
 
 async function updateFoodItem(id, data) {
@@ -332,14 +337,15 @@ async function updateFoodItem(id, data) {
     if (data.description !== undefined) item.description = data.description;
     if (data.category !== undefined) item.category = data.category;
     if (data.restaurantId !== undefined) item.restaurantId = data.restaurantId;
+    if (data.active !== undefined) item.active = data.active;
     await item.save();
-    return { id: item.id, restaurantId: item.restaurantId, name: item.name, price: item.price, description: item.description, category: item.category };
+    return { id: item.id, restaurantId: item.restaurantId, name: item.name, price: item.price, description: item.description, category: item.category, active: item.active };
   }
   if (!store.foodItems) store.foodItems = [];
   const idx = store.foodItems.findIndex(f => f.id === id);
   if (idx === -1) return null;
   store.foodItems[idx] = { ...store.foodItems[idx], ...data };
-  return store.foodItems[idx];
+  return { ...store.foodItems[idx], active: store.foodItems[idx].active !== false };
 }
 
 async function deleteFoodItem(id) {
