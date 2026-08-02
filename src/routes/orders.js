@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const Razorpay = require('razorpay');
-const { listOrders, createOrder, getOrder, updateOrder, deleteOrder } = require('../models/store');
+const { listOrders, createOrder, getOrder, updateOrder, deleteOrder, getRestaurant } = require('../models/store');
+const { sendOrderMailToKitchen } = require('../services/emailService');
 
 // Initialize Razorpay client
 let razorpay;
@@ -91,6 +92,17 @@ router.post('/', async (req, res) => {
     }
   }
 
+  if (created && created.status === 'received') {
+    (async () => {
+      try {
+        const restaurant = created.restaurantId ? await getRestaurant(created.restaurantId) : null;
+        await sendOrderMailToKitchen(created, restaurant);
+      } catch (err) {
+        console.error('Error sending order email to kitchen:', err);
+      }
+    })();
+  }
+
   res.status(201).json(created);
 });
 
@@ -113,6 +125,17 @@ router.post('/verify-payment', async (req, res) => {
       razorpayPaymentId,
       razorpaySignature: 'mock_signature'
     });
+    (async () => {
+      try {
+        const updatedOrder = await getOrder(orderId);
+        if (updatedOrder) {
+          const restaurant = updatedOrder.restaurantId ? await getRestaurant(updatedOrder.restaurantId) : null;
+          await sendOrderMailToKitchen(updatedOrder, restaurant);
+        }
+      } catch (err) {
+        console.error('Error sending order email to kitchen:', err);
+      }
+    })();
     return res.json({ success: true, message: 'Mock payment verified successfully' });
   }
 
@@ -127,6 +150,17 @@ router.post('/verify-payment', async (req, res) => {
       razorpayPaymentId,
       razorpaySignature
     });
+    (async () => {
+      try {
+        const updatedOrder = await getOrder(orderId);
+        if (updatedOrder) {
+          const restaurant = updatedOrder.restaurantId ? await getRestaurant(updatedOrder.restaurantId) : null;
+          await sendOrderMailToKitchen(updatedOrder, restaurant);
+        }
+      } catch (err) {
+        console.error('Error sending order email to kitchen:', err);
+      }
+    })();
     res.json({ success: true, message: 'Payment verified successfully' });
   } else {
     res.status(400).json({ error: 'Invalid payment signature' });

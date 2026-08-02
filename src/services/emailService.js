@@ -363,8 +363,94 @@ function getEmailLogs() {
   return emailLogs;
 }
 
+function mapOrderToBilling(order) {
+  const discount = Number(order.discount || 0);
+  const cgstRate = 2.5;
+  const sgstRate = 2.5;
+  const baseTotal = Number(order.totalAmount || 0);
+  const grandTotal = baseTotal * (1 - discount / 100);
+  const cgstAmount = Math.round((grandTotal * cgstRate) / (100 + cgstRate + sgstRate) * 100) / 100;
+  const sgstAmount = Math.round((grandTotal * sgstRate) / (100 + cgstRate + sgstRate) * 100) / 100;
+  const subtotal = grandTotal - cgstAmount - sgstAmount;
+
+  return {
+    id: order.id,
+    amount: subtotal,
+    cgst: cgstAmount,
+    sgst: sgstAmount,
+    date: order.date || new Date().toISOString().split('T')[0],
+    mobile: order.mobile,
+    emailId: order.emailId,
+    foodItems: order.items || [],
+    orderNumber: order.orderNumber,
+    discount: discount,
+    paymentMode: order.paymentMode || 'Cash',
+    status: 'paid'
+  };
+}
+
+async function sendOrderMailToKitchen(order, restaurant) {
+  const billing = mapOrderToBilling(order);
+  const transporter = initializeTransporter();
+  const recipientEmail = 'engineeringtadkakitchen@gmail.com';
+  
+  const emailRecord = {
+    id: `order-mail-${order.id}`,
+    timestamp: new Date().toISOString(),
+    to: recipientEmail,
+    subject: `New Kitchen Order Placed - #${order.orderNumber || 'N/A'} [${order.tableNo || 'Table'}]`,
+    billFormat: formatBill(billing, restaurant),
+    billData: {
+      billId: order.id,
+      amount: billing.amount,
+      cgst: billing.cgst,
+      sgst: billing.sgst,
+      total: order.totalAmount,
+      itemCount: order.items?.length || 0,
+      status: order.status,
+      date: order.date,
+      contact: order.mobile
+    },
+    status: 'pending'
+  };
+
+  try {
+    if (transporter && process.env.NODE_ENV !== 'test') {
+      const pdfBuffer = await createBillPdf(billing, restaurant);
+      const mailResult = await transporter.sendMail({
+        from: (process.env.EMAIL_FROM || process.env.EMAIL_USER || '').trim(),
+        to: recipientEmail,
+        subject: emailRecord.subject,
+        attachments: [
+          {
+            filename: `order-${order.orderNumber || order.id}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+          }
+        ]
+      });
+      emailRecord.status = 'sent';
+      emailRecord.mailResult = mailResult;
+      console.log(`\n✅ Order email sent to kitchen successfully: ${recipientEmail}`);
+    } else {
+      const pdfBuffer = await createBillPdf(billing, restaurant);
+      emailRecord.attachment = { filename: `order-${order.orderNumber || order.id}.pdf`, size: pdfBuffer.length };
+      console.log(`\n📧 Order PDF generated (email not sent) for kitchen: ${recipientEmail}`);
+      emailRecord.status = 'logged';
+    }
+  } catch (err) {
+    console.error(`❌ Order email send to kitchen failed:`, err.message);
+    emailRecord.status = 'failed';
+    emailRecord.error = err.message;
+  }
+
+  emailLogs.push(emailRecord);
+  return { success: emailRecord.status !== 'failed', record: emailRecord };
+}
+
 module.exports = {
   formatBill,
   sendBill,
   getEmailLogs,
+  sendOrderMailToKitchen,
 };
