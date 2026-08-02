@@ -78,6 +78,9 @@ function formatBill(billing, restaurant) {
   if (billing.orderNumber) {
     billLines.push(`Bill No: #${billing.orderNumber}`);
   }
+  if (billing.orderType) {
+    billLines.push(`Order Type: ${billing.orderType.toUpperCase()}`);
+  }
   billLines.push(
     `Date: ${billing.date || new Date().toISOString().split('T')[0]}`,
     `Time: ${new Date().toLocaleTimeString()}`,
@@ -165,6 +168,11 @@ function createBillPdf(billing, restaurant) {
 
     const invoiceTitle = billing.orderNumber ? `BILL NO. #${billing.orderNumber}` : 'BILL NO.';
     doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(13).text(invoiceTitle, margin, y);
+    if (billing.orderType) {
+      const typeText = `ORDER TYPE: ${billing.orderType.toUpperCase()}`;
+      doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(10)
+        .text(typeText, margin + contentWidth - 200, y + 2, { width: 200, align: 'right' });
+    }
     y += 22;
 
     const col = {
@@ -329,6 +337,43 @@ async function sendBill(billing, restaurant, emailId) {
         from: (process.env.EMAIL_FROM || process.env.EMAIL_USER || '').trim(),
         to: emailId,
         subject: emailRecord.subject,
+        text: bill,
+        html: `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px;">
+                 <h2 style="color: #f25c05; margin-top: 0; text-align: center; border-bottom: 2px solid #f25c05; padding-bottom: 12px;">${restaurant?.name || 'Engineering Tadka'}</h2>
+                 <p>Dear Guest, thank you for ordering with us. Please find your invoice receipt details below:</p>
+                 <div style="background: rgba(242,92,5,0.04); border-left: 4px solid #f25c05; padding: 12px 16px; margin: 20px 0; border-radius: 4px;">
+                   <p style="margin: 4px 0;"><strong>Bill Number:</strong> #${billing.orderNumber || 'N/A'}</p>
+                   <p style="margin: 4px 0;"><strong>Order Type:</strong> <strong style="color: #f25c05; text-transform: uppercase;">${(billing.orderType || 'dinein').toUpperCase()}</strong></p>
+                   <p style="margin: 4px 0;"><strong>Date:</strong> ${billing.date || ''}</p>
+                   <p style="margin: 4px 0;"><strong>Payment Mode:</strong> ${billing.paymentMode || 'Cash'}</p>
+                 </div>
+                 <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                   <thead>
+                     <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 0.9rem; color: #475569;">
+                       <th style="padding: 10px; text-align: left;">Item</th>
+                       <th style="padding: 10px; text-align: center;">Qty</th>
+                       <th style="padding: 10px; text-align: right;">Price</th>
+                       <th style="padding: 10px; text-align: right;">Total</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     ${(billing.foodItems || []).map(item => `
+                       <tr style="border-bottom: 1px solid #e2e8f0; font-size: 0.95rem;">
+                         <td style="padding: 10px; color: #1e293b;">${item.name}</td>
+                         <td style="padding: 10px; text-align: center; color: #64748b;">${item.quantity || 1}</td>
+                         <td style="padding: 10px; text-align: right; color: #64748b;">₹${Number(item.price || 0).toFixed(2)}</td>
+                         <td style="padding: 10px; text-align: right; color: #1e293b; font-weight: 500;">₹${(Number(item.price || 0) * (item.quantity || 1)).toFixed(2)}</td>
+                       </tr>
+                     `).join('')}
+                   </tbody>
+                 </table>
+                 <div style="margin-top: 20px; text-align: right; font-weight: bold; font-size: 1.15rem; color: #f25c05;">
+                   Total Amount: ₹${((billing.amount || 0) + (billing.cgst || 0) + (billing.sgst || 0)).toFixed(2)}
+                 </div>
+                 <p style="font-size: 0.85rem; color: #64748b; margin-top: 30px; text-align: center; border-top: 1px dashed #e2e8f0; padding-top: 15px;">
+                   Where Hunger Meets Innovation. Come back soon!
+                 </p>
+               </div>`,
         attachments: [
           {
             filename: `bill-${billing.id || 'receipt'}.pdf`,
@@ -385,6 +430,7 @@ function mapOrderToBilling(order) {
     orderNumber: order.orderNumber,
     discount: discount,
     paymentMode: order.paymentMode || 'Cash',
+    orderType: order.orderType || 'dinein',
     status: 'paid'
   };
 }
@@ -421,6 +467,44 @@ async function sendOrderMailToKitchen(order, restaurant) {
         from: (process.env.EMAIL_FROM || process.env.EMAIL_USER || '').trim(),
         to: recipientEmail,
         subject: emailRecord.subject,
+        text: emailRecord.billFormat,
+        html: `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px;">
+                 <h2 style="color: #f25c05; margin-top: 0; text-align: center; border-bottom: 2px solid #f25c05; padding-bottom: 12px;">New Kitchen Order Placed</h2>
+                 <p>A new order has been received. Preparation details are enclosed below:</p>
+                 <div style="background: rgba(242,92,5,0.04); border-left: 4px solid #f25c05; padding: 12px 16px; margin: 20px 0; border-radius: 4px;">
+                   <p style="margin: 4px 0;"><strong>Order Number:</strong> #${order.orderNumber || 'N/A'}</p>
+                   <p style="margin: 4px 0;"><strong>Table/Target:</strong> ${order.tableNo || 'N/A'}</p>
+                   <p style="margin: 4px 0;"><strong>Order Type:</strong> <strong style="color: #f25c05; text-transform: uppercase;">${(order.orderType || 'dinein').toUpperCase()}</strong></p>
+                   <p style="margin: 4px 0;"><strong>Date:</strong> ${order.date || ''}</p>
+                   <p style="margin: 4px 0;"><strong>Payment Mode:</strong> ${order.paymentMode || 'Cash'}</p>
+                 </div>
+                 <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                   <thead>
+                     <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 0.9rem; color: #475569;">
+                       <th style="padding: 10px; text-align: left;">Item</th>
+                       <th style="padding: 10px; text-align: center;">Qty</th>
+                       <th style="padding: 10px; text-align: right;">Price</th>
+                       <th style="padding: 10px; text-align: right;">Total</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     ${(order.items || []).map(item => `
+                       <tr style="border-bottom: 1px solid #e2e8f0; font-size: 0.95rem;">
+                         <td style="padding: 10px; color: #1e293b;">${item.name}</td>
+                         <td style="padding: 10px; text-align: center; color: #64748b;">${item.quantity || 1}</td>
+                         <td style="padding: 10px; text-align: right; color: #64748b;">₹${Number(item.price || 0).toFixed(2)}</td>
+                         <td style="padding: 10px; text-align: right; color: #1e293b; font-weight: 500;">₹${(Number(item.price || 0) * (item.quantity || 1)).toFixed(2)}</td>
+                       </tr>
+                     `).join('')}
+                   </tbody>
+                 </table>
+                 <div style="margin-top: 20px; text-align: right; font-weight: bold; font-size: 1.15rem; color: #f25c05;">
+                   Total Amount: ₹${Number(order.totalAmount || 0).toFixed(2)}
+                 </div>
+                 <p style="font-size: 0.85rem; color: #64748b; margin-top: 30px; text-align: center; border-top: 1px dashed #e2e8f0; padding-top: 15px;">
+                   Engineering Tadka Kitchen Management System
+                 </p>
+               </div>`,
         attachments: [
           {
             filename: `order-${order.orderNumber || order.id}.pdf`,

@@ -160,7 +160,8 @@ if (useDb) {
     foodItems: { type: Array, default: [] },
     orderNumber: { type: Number },
     discount: { type: Number, default: 0 },
-    paymentMode: { type: String, default: 'Cash' }
+    paymentMode: { type: String, default: 'Cash' },
+    orderType: { type: String, default: 'dinein' }
   }, { timestamps: true, id: false });
 
   const UserSchema = new mongoose.Schema({
@@ -420,7 +421,8 @@ async function createBilling(data) {
       foodItems: data.foodItems || [],
       orderNumber: data.orderNumber || null,
       discount: data.discount || 0,
-      paymentMode: data.paymentMode || 'Cash'
+      paymentMode: data.paymentMode || 'Cash',
+      orderType: data.orderType || 'dinein'
     });
     await billing.save();
 
@@ -461,10 +463,10 @@ async function createBilling(data) {
       }
     }
 
-    return { id: billing.id, amount: billing.amount, restaurantId: billing.restaurantId, date: billing.date, description: billing.description, status: billing.status, mobile: billing.mobile, emailId: billing.emailId, cgst: billing.cgst, sgst: billing.sgst, foodItems: billing.foodItems, orderNumber: billing.orderNumber, discount: billing.discount || 0, paymentMode: billing.paymentMode || 'Cash' };
+    return { id: billing.id, amount: billing.amount, restaurantId: billing.restaurantId, date: billing.date, description: billing.description, status: billing.status, mobile: billing.mobile, emailId: billing.emailId, cgst: billing.cgst, sgst: billing.sgst, foodItems: billing.foodItems, orderNumber: billing.orderNumber, discount: billing.discount || 0, paymentMode: billing.paymentMode || 'Cash', orderType: billing.orderType || 'dinein' };
   }
   if (!store.billings) store.billings = [];
-  const billing = { id, amount: data.amount, restaurantId: data.restaurantId || null, date: data.date || null, description: data.description || null, status: data.status || 'pending', mobile: data.mobile || null, emailId: data.emailId || null, cgst: data.cgst || 0, sgst: data.sgst || 0, foodItems: data.foodItems || [], orderNumber: data.orderNumber || null, discount: data.discount || 0, paymentMode: data.paymentMode || 'Cash' };
+  const billing = { id, amount: data.amount, restaurantId: data.restaurantId || null, date: data.date || null, description: data.description || null, status: data.status || 'pending', mobile: data.mobile || null, emailId: data.emailId || null, cgst: data.cgst || 0, sgst: data.sgst || 0, foodItems: data.foodItems || [], orderNumber: data.orderNumber || null, discount: data.discount || 0, paymentMode: data.paymentMode || 'Cash', orderType: data.orderType || 'dinein' };
   store.billings.push(billing);
 
   // In-memory Customer creation/update
