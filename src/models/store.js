@@ -17,13 +17,13 @@ if (useDb) {
         const superAdminRole = new Role({
           id: 'super-admin-role-id',
           name: 'Super Admin',
-          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status'],
+          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing', 'users', 'system-status'],
           deleteAccess: true
         });
         const adminRole = new Role({
           id: 'admin-role-id',
           name: 'Admin',
-          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing'],
+          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing'],
           deleteAccess: false
         });
         await superAdminRole.save();
