@@ -102,7 +102,9 @@ if (useDb) {
           { id: 'item-19', name: 'Malai Chicken Shawarma', price: 140, category: 'Shawarma', description: 'Rich malai chicken shawarma', restaurantId: 'default-restaurant-id' },
           { id: 'item-20', name: 'Chicken Drumstick (2PC)', price: 150, category: 'Sides', description: 'Crispy fried chicken drumsticks', restaurantId: 'default-restaurant-id' },
           { id: 'item-21', name: 'Chicken Dum Biryani', price: 200, category: 'Main Course', description: 'Flavorful spiced basmati rice with chicken', restaurantId: 'default-restaurant-id' },
-          { id: 'item-22', name: 'Chicken Sev Puri', price: 80, category: 'Sides', description: 'Chicken sev puri style starter', restaurantId: 'default-restaurant-id' }
+          { id: 'item-22', name: 'Chicken Sev Puri', price: 80, category: 'Sides', description: 'Chicken sev puri style starter', restaurantId: 'default-restaurant-id' },
+          { id: 'item-23', name: 'Thums Up', price: 40, category: 'Beverages', description: 'Thums Up can', restaurantId: 'default-restaurant-id' },
+          { id: 'item-24', name: 'Frooti', price: 40, category: 'Beverages', description: 'Frooti Mango Drink', restaurantId: 'default-restaurant-id' }
         ];
         for (const itemData of defaultFoodItems) {
           const item = new FoodItem(itemData);
