@@ -26,7 +26,7 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { restaurantId, tableNo, mobile, emailId, items, status, totalAmount, date, discount, orderType, paymentMode } = req.body;
+  const { restaurantId, tableNo, mobile, emailId, items, status, totalAmount, date, discount, orderType, paymentMode, cashAmount, upiAmount } = req.body;
   if (!restaurantId) {
     return res.status(400).json({ error: 'restaurantId is required' });
   }
@@ -46,7 +46,9 @@ router.post('/', async (req, res) => {
     discount,
     orderType,
     paymentMode: paymentMode || 'Cash',
-    paymentStatus: isOnlinePayment ? 'pending' : 'paid'
+    paymentStatus: isOnlinePayment ? 'pending' : 'paid',
+    cashAmount: cashAmount || 0,
+    upiAmount: upiAmount || 0
   });
 
   if (isOnlinePayment) {
