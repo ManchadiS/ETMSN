@@ -1069,7 +1069,7 @@ async function listOrders(restaurantId, includePending = false) {
 
 async function createOrder(data) {
   const id = uuidv4();
-  const dateStr = data.date || new Date().toISOString().split('T')[0];
+  const dateStr = data.date || new Date().toLocaleDateString('sv');
 
   // Calculate next orderNumber
   let orderNumber = 1;

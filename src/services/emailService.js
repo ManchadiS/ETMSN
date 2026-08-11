@@ -82,7 +82,7 @@ function formatBill(billing, restaurant) {
     billLines.push(`Order Type: ${billing.orderType.toUpperCase()}`);
   }
   billLines.push(
-    `Date: ${billing.date || new Date().toISOString().split('T')[0]}`,
+    `Date: ${billing.date || new Date().toLocaleDateString('sv')}`,
     `Time: ${new Date().toLocaleTimeString()}`,
     `Contact: 9870859624`,
     '',
@@ -129,7 +129,7 @@ function createBillPdf(billing, restaurant) {
     const cgst = Number(billing.cgst || 0);
     const sgst = Number(billing.sgst || 0);
     const total = subtotal + cgst + sgst;
-    const billDate = billing.date || new Date().toISOString().split('T')[0];
+    const billDate = billing.date || new Date().toLocaleDateString('sv');
     const billTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
     const colors = {
@@ -423,7 +423,7 @@ function mapOrderToBilling(order) {
     amount: subtotal,
     cgst: cgstAmount,
     sgst: sgstAmount,
-    date: order.date || new Date().toISOString().split('T')[0],
+    date: order.date || new Date().toLocaleDateString('sv'),
     mobile: order.mobile,
     emailId: order.emailId,
     foodItems: order.items || [],
