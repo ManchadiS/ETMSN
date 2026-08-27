@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const useDb = process.env.USE_DB === 'true';
 
-let Restaurant, FoodItem, Expense, Billing, User, Inventory, Order, Customer, Role;
+let Restaurant, FoodItem, Expense, Billing, User, Inventory, Order, Customer, Role, PurchaseBill, Payout;
 
 if (useDb) {
   const mongoose = require('mongoose');
@@ -17,13 +17,13 @@ if (useDb) {
         const superAdminRole = new Role({
           id: 'super-admin-role-id',
           name: 'Super Admin',
-          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing', 'users', 'system-status'],
+          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing', 'users', 'system-status', 'payouts'],
           deleteAccess: true
         });
         const adminRole = new Role({
           id: 'admin-role-id',
           name: 'Admin',
-          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing'],
+          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing', 'payouts'],
           deleteAccess: false
         });
         await superAdminRole.save();
@@ -189,7 +189,10 @@ if (useDb) {
   const InventorySchema = new mongoose.Schema({
     id: { type: String, required: true, unique: true },
     restaurantId: { type: String, required: true },
-    name: { type: String, required: true }
+    name: { type: String, required: true },
+    quantity: { type: Number, default: 0 },
+    unit: { type: String, default: 'units' },
+    threshold: { type: Number, default: 10 }
   }, { timestamps: true, id: false });
 
   const OrderSchema = new mongoose.Schema({
@@ -222,6 +225,28 @@ if (useDb) {
     lastLoyaltyActivity: { type: Date, default: Date.now }
   }, { timestamps: true, id: false });
 
+  const PurchaseBillSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    restaurantId: { type: String, required: true },
+    supplierName: { type: String, required: true },
+    billNumber: { type: String },
+    date: { type: String },
+    items: { type: Array, default: [] },
+    totalAmount: { type: Number, required: true },
+    paymentMode: { type: String, default: 'Cash' },
+    status: { type: String, default: 'paid' }
+  }, { timestamps: true, id: false });
+
+  const PayoutSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    restaurantId: { type: String, required: true },
+    platform: { type: String, required: true },
+    amount: { type: Number, required: true },
+    date: { type: String, required: true },
+    referenceNumber: { type: String },
+    description: { type: String }
+  }, { timestamps: true, id: false });
+
   Restaurant = mongoose.model('Restaurant', RestaurantSchema);
   FoodItem = mongoose.model('FoodItem', FoodItemSchema);
   Expense = mongoose.model('Expense', ExpenseSchema);
@@ -231,6 +256,8 @@ if (useDb) {
   Order = mongoose.model('Order', OrderSchema);
   Customer = mongoose.model('Customer', CustomerSchema);
   Role = mongoose.model('Role', RoleSchema);
+  PurchaseBill = mongoose.model('PurchaseBill', PurchaseBillSchema);
+  Payout = mongoose.model('Payout', PayoutSchema);
 }
 
 const store = {
@@ -270,19 +297,20 @@ const store = {
     {
       id: 'super-admin-role-id',
       name: 'Super Admin',
-      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status'],
+      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status', 'payouts'],
       deleteAccess: true
     },
     {
       id: 'admin-role-id',
       name: 'Admin',
-      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing'],
+      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'payouts'],
       deleteAccess: false
     }
   ],
   inventory: [],
   orders: [],
-  customers: []
+  customers: [],
+  payouts: []
 };
 
 async function listFoodItems(restaurantId) {
@@ -959,20 +987,53 @@ async function listInventory(restaurantId) {
   if (useDb) {
     const query = restaurantId ? { restaurantId } : {};
     const rows = await Inventory.find(query);
-    return rows.map(r => ({ id: r.id, restaurantId: r.restaurantId, name: r.name }));
+    return rows.map(r => ({
+      id: r.id,
+      restaurantId: r.restaurantId,
+      name: r.name,
+      quantity: r.quantity !== undefined ? r.quantity : 0,
+      unit: r.unit || 'units',
+      threshold: r.threshold !== undefined ? r.threshold : 10
+    }));
   }
-  return (store.inventory || []).filter(i => !restaurantId || i.restaurantId === restaurantId);
+  return (store.inventory || []).filter(i => !restaurantId || i.restaurantId === restaurantId).map(i => ({
+    quantity: 0,
+    unit: 'units',
+    threshold: 10,
+    ...i
+  }));
 }
 
 async function createInventory(data) {
   const id = uuidv4();
   if (useDb) {
-    const item = new Inventory({ id, restaurantId: data.restaurantId, name: data.name });
+    const item = new Inventory({
+      id,
+      restaurantId: data.restaurantId,
+      name: data.name,
+      quantity: data.quantity !== undefined ? data.quantity : 0,
+      unit: data.unit || 'units',
+      threshold: data.threshold !== undefined ? data.threshold : 10
+    });
     await item.save();
-    return { id: item.id, restaurantId: item.restaurantId, name: item.name };
+    return {
+      id: item.id,
+      restaurantId: item.restaurantId,
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      threshold: item.threshold
+    };
   }
   if (!store.inventory) store.inventory = [];
-  const item = { id, restaurantId: data.restaurantId, name: data.name };
+  const item = {
+    id,
+    restaurantId: data.restaurantId,
+    name: data.name,
+    quantity: data.quantity !== undefined ? data.quantity : 0,
+    unit: data.unit || 'units',
+    threshold: data.threshold !== undefined ? data.threshold : 10
+  };
   store.inventory.push(item);
   return item;
 }
@@ -981,10 +1042,24 @@ async function getInventory(id) {
   if (useDb) {
     const row = await Inventory.findOne({ id });
     if (!row) return null;
-    return { id: row.id, restaurantId: row.restaurantId, name: row.name };
+    return {
+      id: row.id,
+      restaurantId: row.restaurantId,
+      name: row.name,
+      quantity: row.quantity !== undefined ? row.quantity : 0,
+      unit: row.unit || 'units',
+      threshold: row.threshold !== undefined ? row.threshold : 10
+    };
   }
   if (!store.inventory) store.inventory = [];
-  return store.inventory.find(i => i.id === id) || null;
+  const found = store.inventory.find(i => i.id === id);
+  if (!found) return null;
+  return {
+    quantity: 0,
+    unit: 'units',
+    threshold: 10,
+    ...found
+  };
 }
 
 async function updateInventory(id, data) {
@@ -993,8 +1068,18 @@ async function updateInventory(id, data) {
     if (!row) return null;
     if (data.name !== undefined) row.name = data.name;
     if (data.restaurantId !== undefined) row.restaurantId = data.restaurantId;
+    if (data.quantity !== undefined) row.quantity = data.quantity;
+    if (data.unit !== undefined) row.unit = data.unit;
+    if (data.threshold !== undefined) row.threshold = data.threshold;
     await row.save();
-    return { id: row.id, restaurantId: row.restaurantId, name: row.name };
+    return {
+      id: row.id,
+      restaurantId: row.restaurantId,
+      name: row.name,
+      quantity: row.quantity,
+      unit: row.unit,
+      threshold: row.threshold
+    };
   }
   if (!store.inventory) store.inventory = [];
   const idx = store.inventory.findIndex(i => i.id === id);
@@ -1287,6 +1372,159 @@ async function deleteCustomer(id) {
   return true;
 }
 
+async function listPurchaseBills(restaurantId) {
+  if (useDb) {
+    const query = restaurantId ? { restaurantId } : {};
+    const rows = await PurchaseBill.find(query);
+    return rows.map(r => ({
+      id: r.id,
+      restaurantId: r.restaurantId,
+      supplierName: r.supplierName,
+      billNumber: r.billNumber,
+      date: r.date,
+      items: r.items || [],
+      totalAmount: r.totalAmount,
+      paymentMode: r.paymentMode,
+      status: r.status,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }));
+  }
+  return (store.purchaseBills || []).filter(p => !restaurantId || p.restaurantId === restaurantId);
+}
+
+async function createPurchaseBill(data) {
+  const id = uuidv4();
+  const dateStr = data.date || new Date().toLocaleDateString('sv');
+  
+  if (useDb) {
+    const bill = new PurchaseBill({
+      id,
+      restaurantId: data.restaurantId,
+      supplierName: data.supplierName,
+      billNumber: data.billNumber || null,
+      date: dateStr,
+      items: data.items || [],
+      totalAmount: data.totalAmount || 0,
+      paymentMode: data.paymentMode || 'Cash',
+      status: data.status || 'paid'
+    });
+    await bill.save();
+    
+    // Increment stock quantities in inventory
+    if (data.items && Array.isArray(data.items)) {
+      for (const item of data.items) {
+        if (item.inventoryItemId) {
+          const invItem = await Inventory.findOne({ id: item.inventoryItemId });
+          if (invItem) {
+            invItem.quantity = (invItem.quantity || 0) + Number(item.quantity);
+            await invItem.save();
+          }
+        }
+      }
+    }
+
+    // Automatically create related Expense entry
+    await createExpense({
+      restaurantId: data.restaurantId,
+      amount: data.totalAmount || 0,
+      description: `Purchase Bill: ${data.supplierName}${data.billNumber ? ' (' + data.billNumber + ')' : ''}`,
+      date: dateStr,
+      category: 'Purchase',
+      createdBy: 'System'
+    });
+    
+    return {
+      id: bill.id,
+      restaurantId: bill.restaurantId,
+      supplierName: bill.supplierName,
+      billNumber: bill.billNumber,
+      date: bill.date,
+      items: bill.items,
+      totalAmount: bill.totalAmount,
+      paymentMode: bill.paymentMode,
+      status: bill.status,
+      createdAt: bill.createdAt,
+      updatedAt: bill.updatedAt
+    };
+  }
+  
+  if (!store.purchaseBills) store.purchaseBills = [];
+  const bill = {
+    id,
+    restaurantId: data.restaurantId,
+    supplierName: data.supplierName,
+    billNumber: data.billNumber || null,
+    date: dateStr,
+    items: data.items || [],
+    totalAmount: data.totalAmount || 0,
+    paymentMode: data.paymentMode || 'Cash',
+    status: data.status || 'paid',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  store.purchaseBills.push(bill);
+  
+  // Increment in-memory stock quantities
+  if (data.items && Array.isArray(data.items)) {
+    for (const item of data.items) {
+      if (item.inventoryItemId) {
+        if (!store.inventory) store.inventory = [];
+        const invItem = store.inventory.find(i => i.id === item.inventoryItemId);
+        if (invItem) {
+          invItem.quantity = (invItem.quantity || 0) + Number(item.quantity);
+        }
+      }
+    }
+  }
+
+  // Automatically create related Expense entry in memory
+  await createExpense({
+    restaurantId: data.restaurantId,
+    amount: data.totalAmount || 0,
+    description: `Purchase Bill: ${data.supplierName}${data.billNumber ? ' (' + data.billNumber + ')' : ''}`,
+    date: dateStr,
+    category: 'Purchase',
+    createdBy: 'System'
+  });
+  
+  return bill;
+}
+
+async function getPurchaseBill(id) {
+  if (useDb) {
+    const r = await PurchaseBill.findOne({ id });
+    if (!r) return null;
+    return {
+      id: r.id,
+      restaurantId: r.restaurantId,
+      supplierName: r.supplierName,
+      billNumber: r.billNumber,
+      date: r.date,
+      items: r.items || [],
+      totalAmount: r.totalAmount,
+      paymentMode: r.paymentMode,
+      status: r.status,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    };
+  }
+  if (!store.purchaseBills) store.purchaseBills = [];
+  return store.purchaseBills.find(p => p.id === id) || null;
+}
+
+async function deletePurchaseBill(id) {
+  if (useDb) {
+    const res = await PurchaseBill.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+  if (!store.purchaseBills) store.purchaseBills = [];
+  const idx = store.purchaseBills.findIndex(p => p.id === id);
+  if (idx === -1) return false;
+  store.purchaseBills.splice(idx, 1);
+  return true;
+}
+
 async function cleanDatabase() {
   if (useDb) {
     await Restaurant.deleteMany({});
@@ -1298,6 +1536,7 @@ async function cleanDatabase() {
     await Order.deleteMany({});
     await Customer.deleteMany({});
     await Role.deleteMany({});
+    await PurchaseBill.deleteMany({});
 
     const superAdminRole = new Role({
       id: 'super-admin-role-id',
@@ -1385,13 +1624,13 @@ async function cleanDatabase() {
       {
         id: 'super-admin-role-id',
         name: 'Super Admin',
-        sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status'],
+        sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status', 'payouts'],
         deleteAccess: true
       },
       {
         id: 'admin-role-id',
         name: 'Admin',
-        sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing'],
+        sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'payouts'],
         deleteAccess: false
       }
     ];
@@ -1400,8 +1639,137 @@ async function cleanDatabase() {
     store.customers = [];
     store.food = [];
     store.billing = [];
+    store.purchaseBills = [];
+    store.payouts = [];
     console.log('✅ In-Memory database cleaned and default seeds applied.');
   }
+}
+
+async function listPayouts(restaurantId) {
+  if (useDb) {
+    const query = restaurantId ? { restaurantId } : {};
+    const rows = await Payout.find(query);
+    return rows.map(r => ({
+      id: r.id,
+      restaurantId: r.restaurantId,
+      platform: r.platform,
+      amount: r.amount,
+      date: r.date,
+      referenceNumber: r.referenceNumber,
+      description: r.description,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }));
+  }
+  return (store.payouts || []).filter(p => !restaurantId || p.restaurantId === restaurantId);
+}
+
+async function createPayout(data) {
+  const id = uuidv4();
+  if (useDb) {
+    const payout = new Payout({
+      id,
+      restaurantId: data.restaurantId,
+      platform: data.platform,
+      amount: data.amount,
+      date: data.date,
+      referenceNumber: data.referenceNumber || null,
+      description: data.description || null
+    });
+    await payout.save();
+    return {
+      id: payout.id,
+      restaurantId: payout.restaurantId,
+      platform: payout.platform,
+      amount: payout.amount,
+      date: payout.date,
+      referenceNumber: payout.referenceNumber,
+      description: payout.description,
+      createdAt: payout.createdAt,
+      updatedAt: payout.updatedAt
+    };
+  }
+  if (!store.payouts) store.payouts = [];
+  const now = new Date().toISOString();
+  const payout = {
+    id,
+    restaurantId: data.restaurantId,
+    platform: data.platform,
+    amount: data.amount,
+    date: data.date,
+    referenceNumber: data.referenceNumber || null,
+    description: data.description || null,
+    createdAt: now,
+    updatedAt: now
+  };
+  store.payouts.push(payout);
+  return payout;
+}
+
+async function getPayout(id) {
+  if (useDb) {
+    const row = await Payout.findOne({ id });
+    if (!row) return null;
+    return {
+      id: row.id,
+      restaurantId: row.restaurantId,
+      platform: row.platform,
+      amount: row.amount,
+      date: row.date,
+      referenceNumber: row.referenceNumber,
+      description: row.description,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
+  }
+  if (!store.payouts) store.payouts = [];
+  return store.payouts.find(p => p.id === id) || null;
+}
+
+async function updatePayout(id, data) {
+  if (useDb) {
+    const row = await Payout.findOne({ id });
+    if (!row) return null;
+    if (data.restaurantId !== undefined) row.restaurantId = data.restaurantId;
+    if (data.platform !== undefined) row.platform = data.platform;
+    if (data.amount !== undefined) row.amount = data.amount;
+    if (data.date !== undefined) row.date = data.date;
+    if (data.referenceNumber !== undefined) row.referenceNumber = data.referenceNumber;
+    if (data.description !== undefined) row.description = data.description;
+    await row.save();
+    return {
+      id: row.id,
+      restaurantId: row.restaurantId,
+      platform: row.platform,
+      amount: row.amount,
+      date: row.date,
+      referenceNumber: row.referenceNumber,
+      description: row.description,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
+  }
+  if (!store.payouts) store.payouts = [];
+  const idx = store.payouts.findIndex(p => p.id === id);
+  if (idx === -1) return null;
+  store.payouts[idx] = {
+    ...store.payouts[idx],
+    ...data,
+    updatedAt: new Date().toISOString()
+  };
+  return store.payouts[idx];
+}
+
+async function deletePayout(id) {
+  if (useDb) {
+    const res = await Payout.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+  if (!store.payouts) store.payouts = [];
+  const idx = store.payouts.findIndex(p => p.id === id);
+  if (idx === -1) return false;
+  store.payouts.splice(idx, 1);
+  return true;
 }
 
 module.exports = {
@@ -1454,5 +1822,14 @@ module.exports = {
   createCustomer,
   getCustomer,
   updateCustomer,
-  deleteCustomer
+  deleteCustomer,
+  listPurchaseBills,
+  createPurchaseBill,
+  getPurchaseBill,
+  deletePurchaseBill,
+  listPayouts,
+  createPayout,
+  getPayout,
+  updatePayout,
+  deletePayout
 };

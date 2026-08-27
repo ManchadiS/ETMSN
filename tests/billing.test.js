@@ -9,7 +9,7 @@ describe('Billing API', () => {
   beforeAll(async () => {
     const loginRes = await request(app)
       .post('/api/v1/users/login')
-      .send({ email: 'admin@example.com', password: 'admin123' });
+      .send({ email: 'sagarmanchadi324@gmail.com', password: 'sagar@2410' });
     token = loginRes.body.token;
 
     const res = await request(app)

@@ -21,11 +21,11 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { name, restaurantId } = req.body;
+  const { name, restaurantId, quantity, unit, threshold } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
   if (!restaurantId) return res.status(400).json({ error: 'restaurantId is required' });
   
-  const item = await createInventory({ name, restaurantId });
+  const item = await createInventory({ name, restaurantId, quantity, unit, threshold });
   res.status(201).json(item);
 });
 

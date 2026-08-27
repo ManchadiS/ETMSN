@@ -206,12 +206,18 @@ router.post('/', async (req, res) => {
 });
 
 router.put('/:id', async (req, res) => {
+  if (!req.user || req.user.email !== 'sagarmanchadi324@gmail.com') {
+    return res.status(403).json({ error: 'Permission denied. Only sagarmanchadi324@gmail.com is authorized to edit billing data.' });
+  }
   const updated = await updateBilling(req.params.id, req.body);
   if (!updated) return res.status(404).json({ error: 'Billing not found' });
   res.json(updated);
 });
 
 router.delete('/:id', async (req, res) => {
+  if (!req.user || req.user.email !== 'sagarmanchadi324@gmail.com') {
+    return res.status(403).json({ error: 'Permission denied. Only sagarmanchadi324@gmail.com is authorized to delete billing data.' });
+  }
   const ok = await deleteBilling(req.params.id);
   if (!ok) return res.status(404).json({ error: 'Billing not found' });
   res.status(204).send();
