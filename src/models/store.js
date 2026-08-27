@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const useDb = process.env.USE_DB === 'true';
 
-let Restaurant, FoodItem, Expense, Billing, User, Inventory, Order, Customer, Role, PurchaseBill, Payout;
+let Restaurant, FoodItem, Expense, Billing, User, Inventory, Order, Customer, Role, PurchaseBill, Payout, Wastage;
 
 if (useDb) {
   const mongoose = require('mongoose');
@@ -17,13 +17,13 @@ if (useDb) {
         const superAdminRole = new Role({
           id: 'super-admin-role-id',
           name: 'Super Admin',
-          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing', 'users', 'system-status', 'payouts'],
+          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing', 'users', 'system-status', 'payouts', 'wastage'],
           deleteAccess: true
         });
         const adminRole = new Role({
           id: 'admin-role-id',
           name: 'Admin',
-          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing', 'payouts'],
+          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing', 'payouts', 'wastage'],
           deleteAccess: false
         });
         await superAdminRole.save();
@@ -247,6 +247,17 @@ if (useDb) {
     description: { type: String }
   }, { timestamps: true, id: false });
 
+  const WastageSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    restaurantId: { type: String, required: true },
+    inventoryItemId: { type: String, required: true },
+    inventoryItemName: { type: String, required: true },
+    quantity: { type: Number, required: true },
+    date: { type: String, required: true },
+    reason: { type: String },
+    amount: { type: Number, required: true, default: 0 }
+  }, { timestamps: true, id: false });
+
   Restaurant = mongoose.model('Restaurant', RestaurantSchema);
   FoodItem = mongoose.model('FoodItem', FoodItemSchema);
   Expense = mongoose.model('Expense', ExpenseSchema);
@@ -258,6 +269,7 @@ if (useDb) {
   Role = mongoose.model('Role', RoleSchema);
   PurchaseBill = mongoose.model('PurchaseBill', PurchaseBillSchema);
   Payout = mongoose.model('Payout', PayoutSchema);
+  Wastage = mongoose.model('Wastage', WastageSchema);
 }
 
 const store = {
@@ -297,20 +309,21 @@ const store = {
     {
       id: 'super-admin-role-id',
       name: 'Super Admin',
-      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status', 'payouts'],
+      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status', 'payouts', 'wastage'],
       deleteAccess: true
     },
     {
       id: 'admin-role-id',
       name: 'Admin',
-      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'payouts'],
+      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'payouts', 'wastage'],
       deleteAccess: false
     }
   ],
   inventory: [],
   orders: [],
   customers: [],
-  payouts: []
+  payouts: [],
+  wastages: []
 };
 
 async function listFoodItems(restaurantId) {
@@ -1537,17 +1550,18 @@ async function cleanDatabase() {
     await Customer.deleteMany({});
     await Role.deleteMany({});
     await PurchaseBill.deleteMany({});
+    await Wastage.deleteMany({});
 
     const superAdminRole = new Role({
       id: 'super-admin-role-id',
       name: 'Super Admin',
-      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status'],
+      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing', 'users', 'system-status', 'payouts', 'wastage'],
       deleteAccess: true
     });
     const adminRole = new Role({
       id: 'admin-role-id',
       name: 'Admin',
-      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing'],
+      sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing', 'payouts', 'wastage'],
       deleteAccess: false
     });
     await superAdminRole.save();
@@ -1624,13 +1638,13 @@ async function cleanDatabase() {
       {
         id: 'super-admin-role-id',
         name: 'Super Admin',
-        sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status', 'payouts'],
+        sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'users', 'system-status', 'payouts', 'wastage'],
         deleteAccess: true
       },
       {
         id: 'admin-role-id',
         name: 'Admin',
-        sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'payouts'],
+        sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'expenses', 'inventory', 'billing', 'payouts', 'wastage'],
         deleteAccess: false
       }
     ];
@@ -1641,6 +1655,7 @@ async function cleanDatabase() {
     store.billing = [];
     store.purchaseBills = [];
     store.payouts = [];
+    store.wastages = [];
     console.log('✅ In-Memory database cleaned and default seeds applied.');
   }
 }
@@ -1831,5 +1846,229 @@ module.exports = {
   createPayout,
   getPayout,
   updatePayout,
-  deletePayout
+  deletePayout,
+  listWastage,
+  createWastage,
+  getWastage,
+  updateWastage,
+  deleteWastage
 };
+
+async function listWastage(restaurantId) {
+  if (useDb) {
+    const query = restaurantId ? { restaurantId } : {};
+    const rows = await Wastage.find(query);
+    return rows.map(r => ({
+      id: r.id,
+      restaurantId: r.restaurantId,
+      inventoryItemId: r.inventoryItemId,
+      inventoryItemName: r.inventoryItemName,
+      quantity: r.quantity,
+      date: r.date,
+      reason: r.reason,
+      amount: r.amount,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }));
+  }
+  return (store.wastages || []).filter(w => !restaurantId || w.restaurantId === restaurantId);
+}
+
+async function createWastage(data) {
+  const id = uuidv4();
+  
+  if (useDb) {
+    const invItem = await Inventory.findOne({ id: data.inventoryItemId });
+    if (invItem) {
+      invItem.quantity = Math.max(0, (invItem.quantity || 0) - Number(data.quantity));
+      await invItem.save();
+    }
+    const item = new Wastage({
+      id,
+      restaurantId: data.restaurantId,
+      inventoryItemId: data.inventoryItemId,
+      inventoryItemName: data.inventoryItemName,
+      quantity: Number(data.quantity),
+      date: data.date,
+      reason: data.reason || null,
+      amount: Number(data.amount || 0)
+    });
+    await item.save();
+    return {
+      id: item.id,
+      restaurantId: item.restaurantId,
+      inventoryItemId: item.inventoryItemId,
+      inventoryItemName: item.inventoryItemName,
+      quantity: item.quantity,
+      date: item.date,
+      reason: item.reason,
+      amount: item.amount,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    };
+  }
+  
+  if (!store.inventory) store.inventory = [];
+  const invItem = store.inventory.find(i => i.id === data.inventoryItemId);
+  if (invItem) {
+    invItem.quantity = Math.max(0, (invItem.quantity || 0) - Number(data.quantity));
+  }
+  
+  if (!store.wastages) store.wastages = [];
+  const now = new Date().toISOString();
+  const wastage = {
+    id,
+    restaurantId: data.restaurantId,
+    inventoryItemId: data.inventoryItemId,
+    inventoryItemName: data.inventoryItemName,
+    quantity: Number(data.quantity),
+    date: data.date,
+    reason: data.reason || null,
+    amount: Number(data.amount || 0),
+    createdAt: now,
+    updatedAt: now
+  };
+  store.wastages.push(wastage);
+  return wastage;
+}
+
+async function getWastage(id) {
+  if (useDb) {
+    const row = await Wastage.findOne({ id });
+    if (!row) return null;
+    return {
+      id: row.id,
+      restaurantId: row.restaurantId,
+      inventoryItemId: row.inventoryItemId,
+      inventoryItemName: row.inventoryItemName,
+      quantity: row.quantity,
+      date: row.date,
+      reason: row.reason,
+      amount: row.amount,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
+  }
+  if (!store.wastages) store.wastages = [];
+  return store.wastages.find(w => w.id === id) || null;
+}
+
+async function updateWastage(id, data) {
+  if (useDb) {
+    const row = await Wastage.findOne({ id });
+    if (!row) return null;
+
+    const oldQty = row.quantity || 0;
+    const newQty = data.quantity !== undefined ? Number(data.quantity) : oldQty;
+    const oldItemId = row.inventoryItemId;
+    const newItemId = data.inventoryItemId !== undefined ? data.inventoryItemId : oldItemId;
+
+    if (oldItemId === newItemId) {
+      const diff = newQty - oldQty;
+      if (diff !== 0) {
+        const invItem = await Inventory.findOne({ id: oldItemId });
+        if (invItem) {
+          invItem.quantity = Math.max(0, (invItem.quantity || 0) - diff);
+          await invItem.save();
+        }
+      }
+    } else {
+      const oldInvItem = await Inventory.findOne({ id: oldItemId });
+      if (oldInvItem) {
+        oldInvItem.quantity = (oldInvItem.quantity || 0) + oldQty;
+        await oldInvItem.save();
+      }
+      const newInvItem = await Inventory.findOne({ id: newItemId });
+      if (newInvItem) {
+        newInvItem.quantity = Math.max(0, (newInvItem.quantity || 0) - newQty);
+        await newInvItem.save();
+      }
+    }
+
+    if (data.restaurantId !== undefined) row.restaurantId = data.restaurantId;
+    if (data.inventoryItemId !== undefined) row.inventoryItemId = data.inventoryItemId;
+    if (data.inventoryItemName !== undefined) row.inventoryItemName = data.inventoryItemName;
+    if (data.quantity !== undefined) row.quantity = Number(data.quantity);
+    if (data.date !== undefined) row.date = data.date;
+    if (data.reason !== undefined) row.reason = data.reason;
+    if (data.amount !== undefined) row.amount = Number(data.amount);
+    await row.save();
+    return {
+      id: row.id,
+      restaurantId: row.restaurantId,
+      inventoryItemId: row.inventoryItemId,
+      inventoryItemName: row.inventoryItemName,
+      quantity: row.quantity,
+      date: row.date,
+      reason: row.reason,
+      amount: row.amount,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
+  }
+
+  if (!store.wastages) store.wastages = [];
+  const idx = store.wastages.findIndex(w => w.id === id);
+  if (idx === -1) return null;
+
+  const oldW = store.wastages[idx];
+  const oldQty = oldW.quantity || 0;
+  const newQty = data.quantity !== undefined ? Number(data.quantity) : oldQty;
+  const oldItemId = oldW.inventoryItemId;
+  const newItemId = data.inventoryItemId !== undefined ? data.inventoryItemId : oldItemId;
+
+  if (!store.inventory) store.inventory = [];
+  if (oldItemId === newItemId) {
+    const diff = newQty - oldQty;
+    if (diff !== 0) {
+      const invItem = store.inventory.find(i => i.id === oldItemId);
+      if (invItem) {
+        invItem.quantity = Math.max(0, (invItem.quantity || 0) - diff);
+      }
+    }
+  } else {
+    const oldInvItem = store.inventory.find(i => i.id === oldItemId);
+    if (oldInvItem) {
+      oldInvItem.quantity = (oldInvItem.quantity || 0) + oldQty;
+    }
+    const newInvItem = store.inventory.find(i => i.id === newItemId);
+    if (newInvItem) {
+      newInvItem.quantity = Math.max(0, (newInvItem.quantity || 0) - newQty);
+    }
+  }
+
+  store.wastages[idx] = {
+    ...store.wastages[idx],
+    ...data,
+    updatedAt: new Date().toISOString()
+  };
+  return store.wastages[idx];
+}
+
+async function deleteWastage(id) {
+  if (useDb) {
+    const row = await Wastage.findOne({ id });
+    if (!row) return false;
+    const invItem = await Inventory.findOne({ id: row.inventoryItemId });
+    if (invItem) {
+      invItem.quantity = (invItem.quantity || 0) + Number(row.quantity);
+      await invItem.save();
+    }
+    const res = await Wastage.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+
+  if (!store.wastages) store.wastages = [];
+  const idx = store.wastages.findIndex(w => w.id === id);
+  if (idx === -1) return false;
+
+  const row = store.wastages[idx];
+  if (!store.inventory) store.inventory = [];
+  const invItem = store.inventory.find(i => i.id === row.inventoryItemId);
+  if (invItem) {
+    invItem.quantity = (invItem.quantity || 0) + Number(row.quantity);
+  }
+
+  store.wastages.splice(idx, 1);
+  return true;
+}

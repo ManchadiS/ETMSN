@@ -17,6 +17,7 @@ const customersRouter = require('./routes/customers');
 const rolesRouter = require('./routes/roles');
 const purchaseBillsRouter = require('./routes/purchaseBills');
 const payoutsRouter = require('./routes/payouts');
+const wastageRouter = require('./routes/wastage');
 
 const path = require('path');
 
@@ -56,6 +57,7 @@ app.use('/api/v1/inventory', inventoryRouter);
 app.use('/api/v1/orders', ordersRouter);
 app.use('/api/v1/purchase-bills', purchaseBillsRouter);
 app.use('/api/v1/payouts', payoutsRouter);
+app.use('/api/v1/wastage', wastageRouter);
 
 app.get('/', (req, res) => res.json({ status: 'ok' }));
 
