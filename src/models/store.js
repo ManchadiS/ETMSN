@@ -81,30 +81,56 @@ if (useDb) {
       const foodCount = await FoodItem.countDocuments({});
       if (foodCount === 0) {
         const defaultFoodItems = [
-          { id: 'item-1', name: 'Paneer Shawarma', price: 100, category: 'Shawarma', description: 'Fresh paneer shawarma roll', restaurantId: 'default-restaurant-id' },
-          { id: 'item-2', name: 'Peri Peri Paneer Shawarma', price: 110, category: 'Shawarma', description: 'Spicy peri peri paneer shawarma', restaurantId: 'default-restaurant-id' },
-          { id: 'item-3', name: 'Cheesy Paneer Shawarma', price: 110, category: 'Shawarma', description: 'Cheesy loaded paneer shawarma', restaurantId: 'default-restaurant-id' },
-          { id: 'item-4', name: 'Hariyali Paneer Shawarma', price: 120, category: 'Shawarma', description: 'Green herbs spiced paneer shawarma', restaurantId: 'default-restaurant-id' },
-          { id: 'item-5', name: 'Malai Paneer Shawarma', price: 140, category: 'Shawarma', description: 'Rich malai paneer shawarma', restaurantId: 'default-restaurant-id' },
-          { id: 'item-6', name: 'French Fries', price: 70, category: 'Sides', description: 'Crispy salted french fries', restaurantId: 'default-restaurant-id' },
-          { id: 'item-7', name: 'Cheese French Fries', price: 90, category: 'Sides', description: 'French fries with melted cheese sauce', restaurantId: 'default-restaurant-id' },
-          { id: 'item-8', name: 'Dahi Kebab (6PC)', price: 90, category: 'Sides', description: 'Creamy hung curd and spices kebabs', restaurantId: 'default-restaurant-id' },
-          { id: 'item-9', name: 'Paneer Tikka (6PC)', price: 160, category: 'Sides', description: 'Tandoori grilled paneer chunks', restaurantId: 'default-restaurant-id' },
-          { id: 'item-10', name: 'Masala Maggie', price: 60, category: 'Main Course', description: 'Classic Indian spiced instant noodles', restaurantId: 'default-restaurant-id' },
-          { id: 'item-11', name: 'Masala Chai', price: 30, category: 'Beverages', description: 'Authentic Indian spiced milk tea', restaurantId: 'default-restaurant-id' },
-          { id: 'item-12', name: 'Cold Drinks', price: 40, category: 'Beverages', description: 'Assorted soft drinks (MRP)', restaurantId: 'default-restaurant-id' },
-          { id: 'item-13', name: 'Pepsi', price: 40, category: 'Beverages', description: 'Cold pepsi can', restaurantId: 'default-restaurant-id' },
-          { id: 'item-14', name: '7up', price: 40, category: 'Beverages', description: 'Cold 7up can', restaurantId: 'default-restaurant-id' },
-          { id: 'item-15', name: 'Chicken Shawarma', price: 100, category: 'Shawarma', description: 'Grilled chicken shawarma roll', restaurantId: 'default-restaurant-id' },
-          { id: 'item-16', name: 'Peri Peri Chicken Shawarma', price: 110, category: 'Shawarma', description: 'Spicy peri peri chicken shawarma', restaurantId: 'default-restaurant-id' },
-          { id: 'item-17', name: 'Cheesy Chicken Shawarma', price: 110, category: 'Shawarma', description: 'Cheesy loaded chicken shawarma', restaurantId: 'default-restaurant-id' },
-          { id: 'item-18', name: 'Hariyali Chicken Shawarma', price: 120, category: 'Shawarma', description: 'Green herbs spiced chicken shawarma', restaurantId: 'default-restaurant-id' },
-          { id: 'item-19', name: 'Malai Chicken Shawarma', price: 140, category: 'Shawarma', description: 'Rich malai chicken shawarma', restaurantId: 'default-restaurant-id' },
-          { id: 'item-20', name: 'Chicken Drumstick (2PC)', price: 150, category: 'Sides', description: 'Crispy fried chicken drumsticks', restaurantId: 'default-restaurant-id' },
-          { id: 'item-21', name: 'Chicken Dum Biryani', price: 200, category: 'Main Course', description: 'Flavorful spiced basmati rice with chicken', restaurantId: 'default-restaurant-id' },
-          { id: 'item-22', name: 'Chicken Sev Puri', price: 80, category: 'Sides', description: 'Chicken sev puri style starter', restaurantId: 'default-restaurant-id' },
-          { id: 'item-23', name: 'Thums Up', price: 40, category: 'Beverages', description: 'Thums Up can', restaurantId: 'default-restaurant-id' },
-          { id: 'item-24', name: 'Frooti', price: 40, category: 'Beverages', description: 'Frooti Mango Drink', restaurantId: 'default-restaurant-id' }
+          // 1. Shawarma
+          { id: 'item-1', name: 'Chicken Shawarma', price: 100, category: 'Shawarma', description: 'Grilled seasoned chicken rolled in warm flatbread', restaurantId: 'default-restaurant-id' },
+          { id: 'item-2', name: 'Cheesy Chicken Shawarma', price: 130, category: 'Shawarma', description: 'Loaded with melted cheese and seasoned chicken', restaurantId: 'default-restaurant-id' },
+          { id: 'item-3', name: 'Hariyali Chicken Shawarma', price: 120, category: 'Shawarma', description: 'Fresh mint and coriander herb spiced chicken wrap', restaurantId: 'default-restaurant-id' },
+          { id: 'item-4', name: 'Peri Peri Chicken Shawarma', price: 120, category: 'Shawarma', description: 'Fiery peri-peri spiced chicken shawarma wrap', restaurantId: 'default-restaurant-id' },
+          { id: 'item-5', name: 'Malai Chicken Shawarma', price: 150, category: 'Shawarma', description: 'Creamy rich malai chicken with mild spices', restaurantId: 'default-restaurant-id' },
+          { id: 'item-6', name: 'Paneer Shawarma', price: 100, category: 'Shawarma', description: 'Fresh paneer cubes tossed in aromatic spices', restaurantId: 'default-restaurant-id' },
+          { id: 'item-7', name: 'Cheesy Paneer Shawarma', price: 130, category: 'Shawarma', description: 'Gooey cheese blend over succulent paneer cubes', restaurantId: 'default-restaurant-id' },
+          { id: 'item-8', name: 'Hariyali Paneer Shawarma', price: 120, category: 'Shawarma', description: 'Herbed green spiced paneer wrap', restaurantId: 'default-restaurant-id' },
+          { id: 'item-9', name: 'Peri Peri Paneer Shawarma', price: 120, category: 'Shawarma', description: 'Spicy peri peri glazed soft paneer', restaurantId: 'default-restaurant-id' },
+          { id: 'item-10', name: 'Malai Paneer Shawarma', price: 150, category: 'Shawarma', description: 'Rich creamy malai paneer rolled in bread', restaurantId: 'default-restaurant-id' },
+
+          // 2. Sandwiches
+          { id: 'item-11', name: 'Chicken Sandwich', price: 100, category: 'Sandwiches', description: 'Classic seasoned chicken slices with crisp veggies', restaurantId: 'default-restaurant-id' },
+          { id: 'item-12', name: 'Chicken Cheese Sandwich', price: 130, category: 'Sandwiches', description: 'Seasoned chicken paired with melted cheese', restaurantId: 'default-restaurant-id' },
+          { id: 'item-13', name: 'Grilled Chicken Sandwich', price: 120, category: 'Sandwiches', description: 'Golden grilled sandwich packed with chicken', restaurantId: 'default-restaurant-id' },
+          { id: 'item-14', name: 'Grilled Cheese Chicken Sandwich', price: 140, category: 'Sandwiches', description: 'Double grilled sandwich loaded with chicken & gooey cheese', restaurantId: 'default-restaurant-id' },
+          { id: 'item-15', name: 'Paneer Sandwich', price: 100, category: 'Sandwiches', description: 'Freshly seasoned paneer slices and crisp greens', restaurantId: 'default-restaurant-id' },
+          { id: 'item-16', name: 'Paneer Cheese Sandwich', price: 130, category: 'Sandwiches', description: 'Paneer with melted cheddar and mozzarella cheese', restaurantId: 'default-restaurant-id' },
+          { id: 'item-17', name: 'Grilled Paneer Sandwich', price: 120, category: 'Sandwiches', description: 'Toasted crisp bread layered with spiced paneer filling', restaurantId: 'default-restaurant-id' },
+          { id: 'item-18', name: 'Grilled Paneer Cheese Sandwich', price: 140, category: 'Sandwiches', description: 'Grilled sandwich with paneer and overloaded melted cheese', restaurantId: 'default-restaurant-id' },
+
+          // 3. Sides
+          { id: 'item-19', name: 'Chicken Drumstick (2pc)', price: 280, category: 'Sides', description: 'Crispy deep-fried golden chicken drumsticks (2 pcs)', restaurantId: 'default-restaurant-id' },
+          { id: 'item-20', name: 'Chicken Shev Puri', price: 120, category: 'Sides', description: 'Crisp puris stuffed with spiced chicken, chutneys and sev', restaurantId: 'default-restaurant-id' },
+          { id: 'item-21', name: 'Dahi Kebab (6pc)', price: 150, category: 'Sides', description: 'Crisp creamy hung curd spiced kebabs (6 pcs)', restaurantId: 'default-restaurant-id' },
+          { id: 'item-22', name: 'Paneer Tikka (6pc)', price: 220, category: 'Sides', description: 'Clay-oven charred spicy cottage cheese chunks (6 pcs)', restaurantId: 'default-restaurant-id' },
+          { id: 'item-23', name: 'French Fries', price: 90, category: 'Sides', description: 'Crispy salted golden potato fries with dip', restaurantId: 'default-restaurant-id' },
+          { id: 'item-24', name: 'Peri Peri French Fries', price: 120, category: 'Sides', description: 'Crispy french fries dusted with spicy peri peri seasoning', restaurantId: 'default-restaurant-id' },
+          { id: 'item-25', name: 'Cheesy French Fries', price: 150, category: 'Sides', description: 'Golden fries drenched in warm melted cheese sauce', restaurantId: 'default-restaurant-id' },
+
+          // 4. Mains
+          { id: 'item-26', name: 'Chicken Dum Biryani', price: 200, category: 'Main Course', description: 'Slow-cooked aromatic basmati rice with tender spiced chicken', restaurantId: 'default-restaurant-id' },
+          { id: 'item-27', name: 'Masala Maggi', price: 80, category: 'Main Course', description: 'Street style spiced instant noodles cooked with veggies', restaurantId: 'default-restaurant-id' },
+
+          // 5. Drinks
+          { id: 'item-28', name: 'Tea', price: 30, category: 'Beverages', description: 'Traditional Indian masala milk chai served hot', restaurantId: 'default-restaurant-id' },
+          { id: 'item-29', name: 'Hot Coffee', price: 40, category: 'Beverages', description: 'Freshly brewed rich hot espresso coffee', restaurantId: 'default-restaurant-id' },
+          { id: 'item-30', name: 'Cold Coffee', price: 100, category: 'Beverages', description: 'Chilled blended creamy coffee topped with chocolate powder', restaurantId: 'default-restaurant-id' },
+          { id: 'item-31', name: 'Caffe Mocha', price: 160, category: 'Beverages', description: 'Espresso with rich chocolate, steamed milk and whipped cream', restaurantId: 'default-restaurant-id' },
+          { id: 'item-32', name: 'Chocolate Milkshake', price: 130, category: 'Beverages', description: 'Thick and decadent chocolate milkshake with whipped topping', restaurantId: 'default-restaurant-id' },
+          { id: 'item-33', name: 'Strawberry Milk Shake', price: 130, category: 'Beverages', description: 'Luscious pink strawberry milkshake with real fruit essence', restaurantId: 'default-restaurant-id' },
+          { id: 'item-34', name: 'Mango Milk Shake', price: 130, category: 'Beverages', description: 'Thick creamy mango shake made from juicy Alphonso pulp', restaurantId: 'default-restaurant-id' },
+          { id: 'item-35', name: 'Lemon Mojito', price: 80, category: 'Beverages', description: 'Sparkling mint and zesty fresh lime refresher over ice', restaurantId: 'default-restaurant-id' },
+          { id: 'item-36', name: 'Cold Drinks', price: 20, category: 'Beverages', description: 'Assorted soft drinks (MRP)', restaurantId: 'default-restaurant-id' },
+          { id: 'item-37', name: 'Diet Coke', price: 50, category: 'Beverages', description: 'Cold Coca-Cola can', restaurantId: 'default-restaurant-id' },
+          { id: 'item-38', name: 'Thums Up', price: 40, category: 'Beverages', description: 'Cold Thums Up can', restaurantId: 'default-restaurant-id' },
+          { id: 'item-39', name: 'Sprite', price: 40, category: 'Beverages', description: 'Cold Sprite can', restaurantId: 'default-restaurant-id' },
+          { id: 'item-40', name: 'Frooti', price: 10, category: 'Beverages', description: 'Frooti Mango Drink', restaurantId: 'default-restaurant-id' },
+          { id: 'item-41', name: 'Water', price: 10, category: 'Beverages', description: 'Packaged mineral water bottle', restaurantId: 'default-restaurant-id' }
         ];
         for (const itemData of defaultFoodItems) {
           const item = new FoodItem(itemData);
