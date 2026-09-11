@@ -5,13 +5,29 @@ const {
   createInventory,
   getInventory,
   updateInventory,
-  deleteInventory
+  deleteInventory,
+  getDailyInventoryReport,
+  listInventoryDeductions
 } = require('../models/store');
 
 router.get('/', async (req, res) => {
   const { restaurantId } = req.query;
   const list = await listInventory(restaurantId);
   res.json(list);
+});
+
+router.get('/daily-report', async (req, res) => {
+  const { restaurantId, date } = req.query;
+  if (!restaurantId) return res.status(400).json({ error: 'restaurantId is required' });
+  const report = await getDailyInventoryReport(restaurantId, date);
+  res.json(report);
+});
+
+router.get('/deductions', async (req, res) => {
+  const { restaurantId, date } = req.query;
+  if (!restaurantId) return res.status(400).json({ error: 'restaurantId is required' });
+  const deductions = await listInventoryDeductions(restaurantId, date);
+  res.json(deductions);
 });
 
 router.get('/:id', async (req, res) => {

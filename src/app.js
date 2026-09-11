@@ -18,6 +18,8 @@ const rolesRouter = require('./routes/roles');
 const purchaseBillsRouter = require('./routes/purchaseBills');
 const payoutsRouter = require('./routes/payouts');
 const wastageRouter = require('./routes/wastage');
+const recipesRouter = require('./routes/recipes');
+const bankTransactionsRouter = require('./routes/bankTransactions');
 
 const path = require('path');
 
@@ -58,6 +60,8 @@ app.use('/api/v1/orders', ordersRouter);
 app.use('/api/v1/purchase-bills', purchaseBillsRouter);
 app.use('/api/v1/payouts', payoutsRouter);
 app.use('/api/v1/wastage', wastageRouter);
+app.use('/api/v1/recipes', recipesRouter);
+app.use('/api/v1/bank-transactions', bankTransactionsRouter);
 
 app.get('/', (req, res) => res.json({ status: 'ok' }));
 

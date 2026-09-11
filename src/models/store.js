@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const useDb = process.env.USE_DB === 'true';
 
-let Restaurant, FoodItem, Expense, Billing, User, Inventory, Order, Customer, Role, PurchaseBill, Payout, Wastage;
+let Restaurant, FoodItem, Expense, Billing, User, Inventory, Order, Customer, Role, PurchaseBill, Payout, Wastage, Recipe, InventoryDeduction, BankTransaction;
 
 if (useDb) {
   const mongoose = require('mongoose');
@@ -17,13 +17,13 @@ if (useDb) {
         const superAdminRole = new Role({
           id: 'super-admin-role-id',
           name: 'Super Admin',
-          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing', 'users', 'system-status', 'payouts', 'wastage'],
+          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'recipes', 'billing', 'users', 'system-status', 'payouts', 'wastage', 'reports'],
           deleteAccess: true
         });
         const adminRole = new Role({
           id: 'admin-role-id',
           name: 'Admin',
-          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'billing', 'payouts', 'wastage'],
+          sidebarAccess: ['dashboard', 'restaurants', 'menu', 'orders', 'create-order', 'expenses', 'inventory', 'recipes', 'billing', 'payouts', 'wastage', 'reports'],
           deleteAccess: false
         });
         await superAdminRole.save();
@@ -284,8 +284,55 @@ if (useDb) {
     amount: { type: Number, required: true, default: 0 }
   }, { timestamps: true, id: false });
 
+  const RecipeSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    restaurantId: { type: String, required: true },
+    dishName: { type: String, required: true },
+    dishId: { type: String },
+    category: { type: String },
+    appliance: { 
+      type: String, 
+      enum: ['Sandwich Maker', 'Air Fryer', 'Induction', 'Microwave', 'Mixer', 'Assembly'],
+      default: 'Assembly' 
+    },
+    yieldPortions: { type: Number, default: 1 },
+    ingredients: [{
+      inventoryItemId: { type: String, required: true },
+      inventoryItemName: { type: String, required: true },
+      quantity: { type: Number, required: true },
+      unit: { type: String, default: 'units' }
+    }],
+    notes: { type: String },
+    isActive: { type: Boolean, default: true }
+  }, { timestamps: true, id: false });
+
+  const InventoryDeductionSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    restaurantId: { type: String, required: true },
+    date: { type: String, required: true },
+    orderId: { type: String },
+    billId: { type: String },
+    dishName: { type: String, required: true },
+    inventoryItemId: { type: String, required: true },
+    inventoryItemName: { type: String, required: true },
+    quantity: { type: Number, required: true },
+    unit: { type: String, default: 'units' },
+    source: { type: String, default: 'order' }
+  }, { timestamps: true, id: false });
+
   Restaurant = mongoose.model('Restaurant', RestaurantSchema);
   FoodItem = mongoose.model('FoodItem', FoodItemSchema);
+  const BankTransactionSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    restaurantId: { type: String, required: true },
+    type: { type: String, required: true, enum: ['opening_balance', 'deposit', 'deduction'] },
+    amount: { type: Number, required: true },
+    date: { type: String, required: true },
+    source: { type: String, default: 'Other' },
+    description: { type: String, default: '' },
+    referenceNumber: { type: String, default: null }
+  }, { timestamps: true, id: false });
+
   Expense = mongoose.model('Expense', ExpenseSchema);
   Billing = mongoose.model('Billing', BillingSchema);
   User = mongoose.model('User', UserSchema);
@@ -296,9 +343,13 @@ if (useDb) {
   PurchaseBill = mongoose.model('PurchaseBill', PurchaseBillSchema);
   Payout = mongoose.model('Payout', PayoutSchema);
   Wastage = mongoose.model('Wastage', WastageSchema);
+  Recipe = mongoose.model('Recipe', RecipeSchema);
+  InventoryDeduction = mongoose.model('InventoryDeduction', InventoryDeductionSchema);
+  BankTransaction = mongoose.model('BankTransaction', BankTransactionSchema);
 }
 
 const store = {
+  bankTransactions: [],
   restaurants: [
     {
       id: 'default-restaurant-id',
@@ -575,6 +626,17 @@ async function createBilling(data) {
         console.error('Error updating customer loyalty:', err);
       }
     }
+
+    // Auto-deduct inventory based on recipes (TEMPORARILY DISABLED: comment out until accurate inventory data is populated)
+    /*
+    if (data.foodItems && Array.isArray(data.foodItems) && data.foodItems.length > 0) {
+      try {
+        await deductInventoryForItems(data.restaurantId, data.foodItems, id, 'billing', data.date);
+      } catch (deductErr) {
+        console.error('Error auto-deducting inventory for billing:', deductErr);
+      }
+    }
+    */
 
     return mapBilling(billing);
   }
@@ -1026,21 +1088,33 @@ async function listInventory(restaurantId) {
   if (useDb) {
     const query = restaurantId ? { restaurantId } : {};
     const rows = await Inventory.find(query);
-    return rows.map(r => ({
-      id: r.id,
-      restaurantId: r.restaurantId,
-      name: r.name,
-      quantity: r.quantity !== undefined ? r.quantity : 0,
-      unit: r.unit || 'units',
-      threshold: r.threshold !== undefined ? r.threshold : 10
-    }));
+    return rows.map(r => {
+      const quantity = r.quantity !== undefined ? r.quantity : 0;
+      const threshold = r.threshold !== undefined ? r.threshold : 10;
+      const status = quantity <= 0 ? 'out' : (quantity <= threshold ? 'low' : 'healthy');
+      return {
+        id: r.id,
+        restaurantId: r.restaurantId,
+        name: r.name,
+        quantity,
+        unit: r.unit || 'units',
+        threshold,
+        status
+      };
+    });
   }
-  return (store.inventory || []).filter(i => !restaurantId || i.restaurantId === restaurantId).map(i => ({
-    quantity: 0,
-    unit: 'units',
-    threshold: 10,
-    ...i
-  }));
+  return (store.inventory || []).filter(i => !restaurantId || i.restaurantId === restaurantId).map(i => {
+    const quantity = i.quantity !== undefined ? i.quantity : 0;
+    const threshold = i.threshold !== undefined ? i.threshold : 10;
+    const status = quantity <= 0 ? 'out' : (quantity <= threshold ? 'low' : 'healthy');
+    return {
+      quantity,
+      unit: 'units',
+      threshold,
+      status,
+      ...i
+    };
+  });
 }
 
 async function createInventory(data) {
@@ -1238,10 +1312,34 @@ async function createOrder(data) {
   if (useDb) {
     const item = new Order(orderData);
     await item.save();
+
+    // Auto-deduct inventory based on recipes (TEMPORARILY DISABLED: comment out until accurate inventory data is populated)
+    /*
+    if (orderData.items && Array.isArray(orderData.items) && orderData.items.length > 0 && orderData.status !== 'pending_payment') {
+      try {
+        await deductInventoryForItems(orderData.restaurantId, orderData.items, id, 'order', dateStr);
+      } catch (deductErr) {
+        console.error('Error auto-deducting inventory for order:', deductErr);
+      }
+    }
+    */
+
     return mapOrder(item);
   }
   if (!store.orders) store.orders = [];
   store.orders.push(orderData);
+
+  // Auto-deduct inventory based on recipes (TEMPORARILY DISABLED: comment out until accurate inventory data is populated)
+  /*
+  if (orderData.items && Array.isArray(orderData.items) && orderData.items.length > 0 && orderData.status !== 'pending_payment') {
+    try {
+      await deductInventoryForItems(orderData.restaurantId, orderData.items, id, 'order', dateStr);
+    } catch (deductErr) {
+      console.error('Error auto-deducting inventory for order:', deductErr);
+    }
+  }
+  */
+
   return mapOrder(orderData);
 }
 
@@ -1577,6 +1675,7 @@ async function cleanDatabase() {
     await Role.deleteMany({});
     await PurchaseBill.deleteMany({});
     await Wastage.deleteMany({});
+    await BankTransaction.deleteMany({});
 
     const superAdminRole = new Role({
       id: 'super-admin-role-id',
@@ -1682,6 +1781,7 @@ async function cleanDatabase() {
     store.purchaseBills = [];
     store.payouts = [];
     store.wastages = [];
+    store.bankTransactions = [];
     console.log('✅ In-Memory database cleaned and default seeds applied.');
   }
 }
@@ -1877,7 +1977,22 @@ module.exports = {
   createWastage,
   getWastage,
   updateWastage,
-  deleteWastage
+  deleteWastage,
+  listRecipes,
+  createRecipe,
+  getRecipe,
+  updateRecipe,
+  deleteRecipe,
+  seedDefaultRecipes,
+  deductInventoryForItems,
+  listInventoryDeductions,
+  getDailyInventoryReport,
+  listBankTransactions,
+  createBankTransaction,
+  getBankTransaction,
+  updateBankTransaction,
+  deleteBankTransaction,
+  getBankSummary
 };
 
 async function listWastage(restaurantId) {
@@ -2097,4 +2212,1361 @@ async function deleteWastage(id) {
 
   store.wastages.splice(idx, 1);
   return true;
+}
+
+const defaultRecipeCatalog = [
+  // 1. Sandwiches (Prepared in Sandwich Maker - Oil Free)
+  {
+    dishName: 'Chicken Sandwich',
+    category: 'Sandwiches',
+    appliance: 'Sandwich Maker',
+    yieldPortions: 1,
+    notes: 'Assemble with chicken & mayo, toast in Sandwich Maker with butter. 0 cooking oil.',
+    ingredients: [
+      { name: 'Jumbo Sandwich Bread', quantity: 0.2, unit: 'pkts' },
+      { name: 'CHICKEN', quantity: 0.07, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Amul Butter', quantity: 0.01, unit: 'kg' },
+      { name: 'Sandwich Packaging Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Chicken Cheese Sandwich',
+    category: 'Sandwiches',
+    appliance: 'Sandwich Maker',
+    yieldPortions: 1,
+    notes: 'Layer seasoned chicken and shredded cheese. Grill in Sandwich Maker with butter.',
+    ingredients: [
+      { name: 'Jumbo Sandwich Bread', quantity: 0.2, unit: 'pkts' },
+      { name: 'CHICKEN', quantity: 0.07, unit: 'kg' },
+      { name: 'Blend Shredded Cheese', quantity: 0.025, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Amul Butter', quantity: 0.01, unit: 'kg' },
+      { name: 'Sandwich Packaging Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Grilled Chicken Sandwich',
+    category: 'Sandwiches',
+    appliance: 'Sandwich Maker',
+    yieldPortions: 1,
+    notes: 'Crispy grilled sandwich with chicken filling, grilled in Sandwich Maker.',
+    ingredients: [
+      { name: 'Jumbo Sandwich Bread', quantity: 0.2, unit: 'pkts' },
+      { name: 'CHICKEN', quantity: 0.07, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Amul Butter', quantity: 0.015, unit: 'kg' },
+      { name: 'Sandwich Packaging Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Grilled Cheese Chicken Sandwich',
+    category: 'Sandwiches',
+    appliance: 'Sandwich Maker',
+    yieldPortions: 1,
+    notes: 'Overloaded cheese and spiced chicken, golden grilled in Sandwich Maker.',
+    ingredients: [
+      { name: 'Jumbo Sandwich Bread', quantity: 0.2, unit: 'pkts' },
+      { name: 'CHICKEN', quantity: 0.07, unit: 'kg' },
+      { name: 'Blend Shredded Cheese', quantity: 0.03, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Amul Butter', quantity: 0.015, unit: 'kg' },
+      { name: 'Sandwich Packaging Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Paneer Sandwich',
+    category: 'Sandwiches',
+    appliance: 'Sandwich Maker',
+    yieldPortions: 1,
+    notes: 'Fresh Warana malai paneer sandwich, toasted in Sandwich Maker.',
+    ingredients: [
+      { name: 'Jumbo Sandwich Bread', quantity: 0.2, unit: 'pkts' },
+      { name: 'WARANA MALAI PANEER', quantity: 0.07, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Amul Butter', quantity: 0.01, unit: 'kg' },
+      { name: 'Sandwich Packaging Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Paneer Cheese Sandwich',
+    category: 'Sandwiches',
+    appliance: 'Sandwich Maker',
+    yieldPortions: 1,
+    notes: 'Soft paneer cubes with cheese blend toasted in Sandwich Maker.',
+    ingredients: [
+      { name: 'Jumbo Sandwich Bread', quantity: 0.2, unit: 'pkts' },
+      { name: 'WARANA MALAI PANEER', quantity: 0.07, unit: 'kg' },
+      { name: 'Blend Shredded Cheese', quantity: 0.025, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Amul Butter', quantity: 0.01, unit: 'kg' },
+      { name: 'Sandwich Packaging Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Grilled Paneer Sandwich',
+    category: 'Sandwiches',
+    appliance: 'Sandwich Maker',
+    yieldPortions: 1,
+    notes: 'Spiced paneer filling grilled to golden crisp in Sandwich Maker.',
+    ingredients: [
+      { name: 'Jumbo Sandwich Bread', quantity: 0.2, unit: 'pkts' },
+      { name: 'WARANA MALAI PANEER', quantity: 0.07, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Amul Butter', quantity: 0.015, unit: 'kg' },
+      { name: 'Sandwich Packaging Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Grilled Paneer Cheese Sandwich',
+    category: 'Sandwiches',
+    appliance: 'Sandwich Maker',
+    yieldPortions: 1,
+    notes: 'Double layered paneer and rich mozzarella cheese, grilled in Sandwich Maker.',
+    ingredients: [
+      { name: 'Jumbo Sandwich Bread', quantity: 0.2, unit: 'pkts' },
+      { name: 'WARANA MALAI PANEER', quantity: 0.07, unit: 'kg' },
+      { name: 'Blend Shredded Cheese', quantity: 0.03, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Amul Butter', quantity: 0.015, unit: 'kg' },
+      { name: 'Sandwich Packaging Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+
+  // 2. Shawarmas (Microwave / Assembly - Oil Free)
+  {
+    dishName: 'Chicken Shawarma',
+    category: 'Shawarma',
+    appliance: 'Microwave',
+    yieldPortions: 1,
+    notes: 'Warm kubbos in microwave for 15 secs, roll with garlic mayo and seasoned chicken.',
+    ingredients: [
+      { name: 'Kubbos / Pita Flatbread', quantity: 1, unit: 'pcs' },
+      { name: 'CHICKEN', quantity: 0.08, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.025, unit: 'kg' },
+      { name: 'Shawarma Foil Wrap', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Cheesy Chicken Shawarma',
+    category: 'Shawarma',
+    appliance: 'Microwave',
+    yieldPortions: 1,
+    notes: 'Warm kubbos, fill with chicken, melted shredded cheese and garlic mayo.',
+    ingredients: [
+      { name: 'Kubbos / Pita Flatbread', quantity: 1, unit: 'pcs' },
+      { name: 'CHICKEN', quantity: 0.08, unit: 'kg' },
+      { name: 'Blend Shredded Cheese', quantity: 0.025, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.025, unit: 'kg' },
+      { name: 'Shawarma Foil Wrap', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Hariyali Chicken Shawarma',
+    category: 'Shawarma',
+    appliance: 'Microwave',
+    yieldPortions: 1,
+    notes: 'Chicken tossed with fresh mint chutney rolled in warm flatbread.',
+    ingredients: [
+      { name: 'Kubbos / Pita Flatbread', quantity: 1, unit: 'pcs' },
+      { name: 'CHICKEN', quantity: 0.08, unit: 'kg' },
+      { name: 'Mint Chutney', quantity: 0.02, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Shawarma Foil Wrap', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Peri Peri Chicken Shawarma',
+    category: 'Shawarma',
+    appliance: 'Microwave',
+    yieldPortions: 1,
+    notes: 'Fiery peri-peri spiced chicken shawarma wrap.',
+    ingredients: [
+      { name: 'Kubbos / Pita Flatbread', quantity: 1, unit: 'pcs' },
+      { name: 'CHICKEN', quantity: 0.08, unit: 'kg' },
+      { name: 'Peri Peri Seasoning', quantity: 0.01, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.025, unit: 'kg' },
+      { name: 'Shawarma Foil Wrap', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Malai Chicken Shawarma',
+    category: 'Shawarma',
+    appliance: 'Microwave',
+    yieldPortions: 1,
+    notes: 'Creamy rich malai chicken with extra garlic mayonnaise in warm kubbos.',
+    ingredients: [
+      { name: 'Kubbos / Pita Flatbread', quantity: 1, unit: 'pcs' },
+      { name: 'CHICKEN', quantity: 0.08, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.035, unit: 'kg' },
+      { name: 'Shawarma Foil Wrap', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Paneer Shawarma',
+    category: 'Shawarma',
+    appliance: 'Microwave',
+    yieldPortions: 1,
+    notes: 'Spiced paneer cubes rolled in warm flatbread with garlic mayo.',
+    ingredients: [
+      { name: 'Kubbos / Pita Flatbread', quantity: 1, unit: 'pcs' },
+      { name: 'WARANA MALAI PANEER', quantity: 0.08, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.025, unit: 'kg' },
+      { name: 'Shawarma Foil Wrap', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Cheesy Paneer Shawarma',
+    category: 'Shawarma',
+    appliance: 'Microwave',
+    yieldPortions: 1,
+    notes: 'Warm kubbos with spiced paneer, melted cheese and garlic mayo.',
+    ingredients: [
+      { name: 'Kubbos / Pita Flatbread', quantity: 1, unit: 'pcs' },
+      { name: 'WARANA MALAI PANEER', quantity: 0.08, unit: 'kg' },
+      { name: 'Blend Shredded Cheese', quantity: 0.025, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.025, unit: 'kg' },
+      { name: 'Shawarma Foil Wrap', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Hariyali Paneer Shawarma',
+    category: 'Shawarma',
+    appliance: 'Microwave',
+    yieldPortions: 1,
+    notes: 'Mint and coriander spiced paneer wrap.',
+    ingredients: [
+      { name: 'Kubbos / Pita Flatbread', quantity: 1, unit: 'pcs' },
+      { name: 'WARANA MALAI PANEER', quantity: 0.08, unit: 'kg' },
+      { name: 'Mint Chutney', quantity: 0.02, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Shawarma Foil Wrap', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Peri Peri Paneer Shawarma',
+    category: 'Shawarma',
+    appliance: 'Microwave',
+    yieldPortions: 1,
+    notes: 'Fiery peri-peri spiced cottage cheese shawarma wrap.',
+    ingredients: [
+      { name: 'Kubbos / Pita Flatbread', quantity: 1, unit: 'pcs' },
+      { name: 'WARANA MALAI PANEER', quantity: 0.08, unit: 'kg' },
+      { name: 'Peri Peri Seasoning', quantity: 0.01, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.025, unit: 'kg' },
+      { name: 'Shawarma Foil Wrap', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Malai Paneer Shawarma',
+    category: 'Shawarma',
+    appliance: 'Microwave',
+    yieldPortions: 1,
+    notes: 'Extra creamy malai paneer wrap with rich garlic mayonnaise.',
+    ingredients: [
+      { name: 'Kubbos / Pita Flatbread', quantity: 1, unit: 'pcs' },
+      { name: 'WARANA MALAI PANEER', quantity: 0.08, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.035, unit: 'kg' },
+      { name: 'Shawarma Foil Wrap', quantity: 1, unit: 'pcs' }
+    ]
+  },
+
+  // 3. Sides & Starters (Air Fryer - 100% Oil Free)
+  {
+    dishName: 'Dahi Kebab (6pc)',
+    category: 'Sides',
+    appliance: 'Air Fryer',
+    yieldPortions: 1,
+    notes: 'Air-fry at 180°C for 8-10 mins. 100% Oil-Free using Hung Curd (Dahi) & Fresh Warana Paneer.',
+    ingredients: [
+      { name: 'Hung Curd (Dahi)', quantity: 0.10, unit: 'kg' },
+      { name: 'WARANA MALAI PANEER', quantity: 0.05, unit: 'kg' },
+      { name: 'Starter / Fries Serving Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Paneer Tikka (6pc)',
+    category: 'Sides',
+    appliance: 'Air Fryer',
+    yieldPortions: 1,
+    notes: 'Marinate fresh paneer in tikka spices, air fry at 200°C for 8 mins with light butter brush.',
+    ingredients: [
+      { name: 'WARANA MALAI PANEER', quantity: 0.15, unit: 'kg' },
+      { name: 'Tikka Marinade Masala', quantity: 0.025, unit: 'kg' },
+      { name: 'Amul Butter', quantity: 0.01, unit: 'kg' },
+      { name: 'Starter / Fries Serving Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Chicken Drumstick (2pc)',
+    category: 'Sides',
+    appliance: 'Air Fryer',
+    yieldPortions: 1,
+    notes: 'Air-fry chicken drumsticks at 190°C for 15 mins until golden and crispy.',
+    ingredients: [
+      { name: 'Chicken Drumsticks', quantity: 2, unit: 'pcs' },
+      { name: 'Tikka Marinade Masala', quantity: 0.02, unit: 'kg' },
+      { name: 'Starter / Fries Serving Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'French Fries',
+    category: 'Sides',
+    appliance: 'Air Fryer',
+    yieldPortions: 1,
+    notes: 'Air-fry frozen fries for 12 mins at 200°C. 0 cooking oil.',
+    ingredients: [
+      { name: 'Frozen Potato French Fries', quantity: 0.15, unit: 'kg' },
+      { name: 'Starter / Fries Serving Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Peri Peri French Fries',
+    category: 'Sides',
+    appliance: 'Air Fryer',
+    yieldPortions: 1,
+    notes: 'Air-fry fries (0 oil), toss with spicy peri peri seasoning.',
+    ingredients: [
+      { name: 'Frozen Potato French Fries', quantity: 0.15, unit: 'kg' },
+      { name: 'Peri Peri Seasoning', quantity: 0.01, unit: 'kg' },
+      { name: 'Starter / Fries Serving Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Cheesy French Fries',
+    category: 'Sides',
+    appliance: 'Air Fryer',
+    yieldPortions: 1,
+    notes: 'Crispy air-fried fries topped with melted shredded cheese blend.',
+    ingredients: [
+      { name: 'Frozen Potato French Fries', quantity: 0.15, unit: 'kg' },
+      { name: 'Blend Shredded Cheese', quantity: 0.03, unit: 'kg' },
+      { name: 'Starter / Fries Serving Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Chicken Shev Puri',
+    category: 'Sides',
+    appliance: 'Assembly',
+    yieldPortions: 1,
+    notes: 'Assemble crisp papdis with chicken, nylon shev, mint and sweet tamarind chutneys.',
+    ingredients: [
+      { name: 'Papdi Puri', quantity: 0.2, unit: 'pkts' },
+      { name: 'CHICKEN', quantity: 0.06, unit: 'kg' },
+      { name: 'Nylon Shev', quantity: 0.015, unit: 'kg' },
+      { name: 'Mint Chutney', quantity: 0.015, unit: 'kg' },
+      { name: 'Tamarind Sweet Chutney', quantity: 0.015, unit: 'kg' },
+      { name: 'Starter / Fries Serving Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+
+  // 4. Mains (Induction Cooktop)
+  {
+    dishName: 'Chicken Dum Biryani',
+    category: 'Main Course',
+    appliance: 'Induction',
+    yieldPortions: 1,
+    notes: 'Cook on Induction with basmati rice, spiced chicken, desi ghee and cooking oil.',
+    ingredients: [
+      { name: 'Basmati Biryani Rice', quantity: 0.18, unit: 'kg' },
+      { name: 'CHICKEN', quantity: 0.18, unit: 'kg' },
+      { name: 'Biryani Spice Mix', quantity: 0.03, unit: 'kg' },
+      { name: 'Desi Ghee', quantity: 0.015, unit: 'litres' },
+      { name: 'Cooking Oil', quantity: 0.015, unit: 'litres' },
+      { name: 'Biryani Container 750ml', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Masala Maggi',
+    category: 'Main Course',
+    appliance: 'Induction',
+    yieldPortions: 1,
+    notes: 'Boil on Induction with tastemaker and butter.',
+    ingredients: [
+      { name: 'Maggi Noodles (Pack)', quantity: 1, unit: 'pkts' },
+      { name: 'Amul Butter', quantity: 0.01, unit: 'kg' },
+      { name: 'Starter / Fries Serving Box', quantity: 1, unit: 'pcs' }
+    ]
+  },
+
+  // 5. Beverages (Mixer & Induction)
+  {
+    dishName: 'Tea',
+    category: 'Beverages',
+    appliance: 'Induction',
+    yieldPortions: 1,
+    notes: 'Brew milk tea on induction with chai masala and sugar.',
+    ingredients: [
+      { name: 'Fresh Milk (Amul Taaza)', quantity: 0.12, unit: 'litres' },
+      { name: 'Tea Leaves & Chai Masala', quantity: 0.006, unit: 'kg' },
+      { name: 'Sugar', quantity: 0.015, unit: 'kg' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Hot Coffee',
+    category: 'Beverages',
+    appliance: 'Induction',
+    yieldPortions: 1,
+    notes: 'Brew fresh espresso coffee with steamed milk on induction.',
+    ingredients: [
+      { name: 'Fresh Milk (Amul Taaza)', quantity: 0.15, unit: 'litres' },
+      { name: 'Espresso Coffee Powder', quantity: 0.006, unit: 'kg' },
+      { name: 'Sugar', quantity: 0.015, unit: 'kg' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Cold Coffee',
+    category: 'Beverages',
+    appliance: 'Mixer',
+    yieldPortions: 1,
+    notes: 'Blend chilled milk, espresso powder, cocoa and sugar in Mixer until frothy.',
+    ingredients: [
+      { name: 'Fresh Milk (Amul Taaza)', quantity: 0.22, unit: 'litres' },
+      { name: 'Espresso Coffee Powder', quantity: 0.008, unit: 'kg' },
+      { name: 'Sugar', quantity: 0.02, unit: 'kg' },
+      { name: 'Cocoa & Chocolate Powder', quantity: 0.005, unit: 'kg' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Caffe Mocha',
+    category: 'Beverages',
+    appliance: 'Mixer',
+    yieldPortions: 1,
+    notes: 'Blend milk, espresso and rich chocolate syrup in Mixer.',
+    ingredients: [
+      { name: 'Fresh Milk (Amul Taaza)', quantity: 0.22, unit: 'litres' },
+      { name: 'Espresso Coffee Powder', quantity: 0.008, unit: 'kg' },
+      { name: 'Chocolate Syrup', quantity: 0.02, unit: 'litres' },
+      { name: 'Sugar', quantity: 0.015, unit: 'kg' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Chocolate Milkshake',
+    category: 'Beverages',
+    appliance: 'Mixer',
+    yieldPortions: 1,
+    notes: 'Thick blended chocolate shake made in Mixer.',
+    ingredients: [
+      { name: 'Fresh Milk (Amul Taaza)', quantity: 0.22, unit: 'litres' },
+      { name: 'Chocolate Syrup', quantity: 0.035, unit: 'litres' },
+      { name: 'Sugar', quantity: 0.015, unit: 'kg' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Strawberry Milk Shake',
+    category: 'Beverages',
+    appliance: 'Mixer',
+    yieldPortions: 1,
+    notes: 'Blend chilled milk with strawberry fruit crush in Mixer.',
+    ingredients: [
+      { name: 'Fresh Milk (Amul Taaza)', quantity: 0.22, unit: 'litres' },
+      { name: 'Strawberry Fruit Crush', quantity: 0.035, unit: 'litres' },
+      { name: 'Sugar', quantity: 0.015, unit: 'kg' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Mango Milk Shake',
+    category: 'Beverages',
+    appliance: 'Mixer',
+    yieldPortions: 1,
+    notes: 'Blend fresh milk with rich Alphonso mango pulp in Mixer.',
+    ingredients: [
+      { name: 'Fresh Milk (Amul Taaza)', quantity: 0.22, unit: 'litres' },
+      { name: 'Alphonso Mango Pulp', quantity: 0.04, unit: 'litres' },
+      { name: 'Sugar', quantity: 0.015, unit: 'kg' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Lemon Mojito',
+    category: 'Beverages',
+    appliance: 'Mixer',
+    yieldPortions: 1,
+    notes: 'Fresh lemon juice, mint syrup, sugar, topped with sparkling club soda.',
+    ingredients: [
+      { name: 'Fresh Lemons', quantity: 1, unit: 'pcs' },
+      { name: 'Mojito Mint Syrup', quantity: 0.03, unit: 'litres' },
+      { name: 'Sugar', quantity: 0.015, unit: 'kg' },
+      { name: 'Club Soda', quantity: 1, unit: 'cans' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Cold Drinks',
+    category: 'Beverages',
+    appliance: 'Assembly',
+    yieldPortions: 1,
+    notes: 'Chilled soft drink served with cup.',
+    ingredients: [
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Diet Coke',
+    category: 'Beverages',
+    appliance: 'Assembly',
+    yieldPortions: 1,
+    notes: 'Serve chilled Diet Coke can with cup and paper straw.',
+    ingredients: [
+      { name: 'Diet Coke Can 300ml', quantity: 1, unit: 'cans' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Thums Up',
+    category: 'Beverages',
+    appliance: 'Assembly',
+    yieldPortions: 1,
+    notes: 'Serve chilled Thums Up can with cup and paper straw.',
+    ingredients: [
+      { name: 'Thums Up Can 300ml', quantity: 1, unit: 'cans' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Sprite',
+    category: 'Beverages',
+    appliance: 'Assembly',
+    yieldPortions: 1,
+    notes: 'Serve chilled Sprite can with cup and paper straw.',
+    ingredients: [
+      { name: 'Sprite Can 300ml', quantity: 1, unit: 'cans' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Frooti',
+    category: 'Beverages',
+    appliance: 'Assembly',
+    yieldPortions: 1,
+    notes: 'Serve packaged Frooti pack with straw.',
+    ingredients: [
+      { name: 'Frooti 150ml', quantity: 1, unit: 'pkts' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Water',
+    category: 'Beverages',
+    appliance: 'Assembly',
+    yieldPortions: 1,
+    notes: 'Serve sealed packaged mineral water bottle.',
+    ingredients: [
+      { name: 'Packaged Water Bottle 500ml', quantity: 1, unit: 'pcs' }
+    ]
+  },
+
+  // 6. Value Pre-set Combos
+  {
+    dishName: 'Combo 1: Sandwich + Fries + Milk Shake',
+    category: 'Combos',
+    appliance: 'Sandwich Maker',
+    yieldPortions: 1,
+    notes: 'Grilled Sandwich in Sandwich Maker + Air-fried Fries + Chocolate Milk Shake in Mixer.',
+    ingredients: [
+      { name: 'Jumbo Sandwich Bread', quantity: 0.2, unit: 'pkts' },
+      { name: 'CHICKEN', quantity: 0.07, unit: 'kg' },
+      { name: 'Frozen Potato French Fries', quantity: 0.15, unit: 'kg' },
+      { name: 'Fresh Milk (Amul Taaza)', quantity: 0.22, unit: 'litres' },
+      { name: 'Chocolate Syrup', quantity: 0.035, unit: 'litres' },
+      { name: 'Amul Butter', quantity: 0.01, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Sugar', quantity: 0.015, unit: 'kg' },
+      { name: 'Sandwich Packaging Box', quantity: 1, unit: 'pcs' },
+      { name: 'Starter / Fries Serving Box', quantity: 1, unit: 'pcs' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Combo 2: Sandwich + Cold Coffee',
+    category: 'Combos',
+    appliance: 'Sandwich Maker',
+    yieldPortions: 1,
+    notes: 'Toasted Sandwich in Sandwich Maker + Frothy Cold Coffee in Mixer.',
+    ingredients: [
+      { name: 'Jumbo Sandwich Bread', quantity: 0.2, unit: 'pkts' },
+      { name: 'CHICKEN', quantity: 0.07, unit: 'kg' },
+      { name: 'Fresh Milk (Amul Taaza)', quantity: 0.22, unit: 'litres' },
+      { name: 'Espresso Coffee Powder', quantity: 0.008, unit: 'kg' },
+      { name: 'Amul Butter', quantity: 0.01, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Sugar', quantity: 0.02, unit: 'kg' },
+      { name: 'Sandwich Packaging Box', quantity: 1, unit: 'pcs' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Combo 3: Sandwich + Tea + Fries',
+    category: 'Combos',
+    appliance: 'Sandwich Maker',
+    yieldPortions: 1,
+    notes: 'Sandwich in Sandwich Maker + Masala Tea on Induction + Air-fried Fries.',
+    ingredients: [
+      { name: 'Jumbo Sandwich Bread', quantity: 0.2, unit: 'pkts' },
+      { name: 'CHICKEN', quantity: 0.07, unit: 'kg' },
+      { name: 'Frozen Potato French Fries', quantity: 0.15, unit: 'kg' },
+      { name: 'Fresh Milk (Amul Taaza)', quantity: 0.12, unit: 'litres' },
+      { name: 'Tea Leaves & Chai Masala', quantity: 0.006, unit: 'kg' },
+      { name: 'Amul Butter', quantity: 0.01, unit: 'kg' },
+      { name: 'Garlic Eggless Mayonnaise', quantity: 0.02, unit: 'kg' },
+      { name: 'Sugar', quantity: 0.015, unit: 'kg' },
+      { name: 'Sandwich Packaging Box', quantity: 1, unit: 'pcs' },
+      { name: 'Starter / Fries Serving Box', quantity: 1, unit: 'pcs' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Combo 4: Biryani + Coke',
+    category: 'Combos',
+    appliance: 'Induction',
+    yieldPortions: 1,
+    notes: 'Aromatic Chicken Dum Biryani with Ghee & Oil + Chilled Diet Coke Can.',
+    ingredients: [
+      { name: 'Basmati Biryani Rice', quantity: 0.18, unit: 'kg' },
+      { name: 'CHICKEN', quantity: 0.18, unit: 'kg' },
+      { name: 'Biryani Spice Mix', quantity: 0.03, unit: 'kg' },
+      { name: 'Desi Ghee', quantity: 0.015, unit: 'litres' },
+      { name: 'Cooking Oil', quantity: 0.015, unit: 'litres' },
+      { name: 'Diet Coke Can 300ml', quantity: 1, unit: 'cans' },
+      { name: 'Biryani Container 750ml', quantity: 1, unit: 'pcs' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Combo 5: Chicken Drumstick (2pc) + Fries + Milk Shake',
+    category: 'Combos',
+    appliance: 'Air Fryer',
+    yieldPortions: 1,
+    notes: 'Air-fried Drumsticks (2pc) & Fries (0 oil) + Blended Chocolate Shake.',
+    ingredients: [
+      { name: 'Chicken Drumsticks', quantity: 2, unit: 'pcs' },
+      { name: 'Frozen Potato French Fries', quantity: 0.15, unit: 'kg' },
+      { name: 'Fresh Milk (Amul Taaza)', quantity: 0.22, unit: 'litres' },
+      { name: 'Chocolate Syrup', quantity: 0.035, unit: 'litres' },
+      { name: 'Sugar', quantity: 0.015, unit: 'kg' },
+      { name: 'Tikka Marinade Masala', quantity: 0.02, unit: 'kg' },
+      { name: 'Starter / Fries Serving Box', quantity: 2, unit: 'pcs' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  },
+  {
+    dishName: 'Tadka Special: Drum Stick (1pc) + Paneer Tikka (2pc) + Dahi Kebab (2pc) + Milk Shake',
+    category: 'Combos',
+    appliance: 'Air Fryer',
+    yieldPortions: 1,
+    notes: 'Platter with Drumstick, Paneer Tikka, Dahi Kebab (Dahi+Paneer) in Air Fryer + Strawberry Shake.',
+    ingredients: [
+      { name: 'Chicken Drumsticks', quantity: 1, unit: 'pcs' },
+      { name: 'WARANA MALAI PANEER', quantity: 0.06, unit: 'kg' },
+      { name: 'Hung Curd (Dahi)', quantity: 0.04, unit: 'kg' },
+      { name: 'Fresh Milk (Amul Taaza)', quantity: 0.22, unit: 'litres' },
+      { name: 'Strawberry Fruit Crush', quantity: 0.035, unit: 'litres' },
+      { name: 'Sugar', quantity: 0.015, unit: 'kg' },
+      { name: 'Tikka Marinade Masala', quantity: 0.015, unit: 'kg' },
+      { name: 'Starter / Fries Serving Box', quantity: 2, unit: 'pcs' },
+      { name: 'Beverage Cups & Glasses', quantity: 1, unit: 'pcs' },
+      { name: 'Paper Straws', quantity: 1, unit: 'pcs' }
+    ]
+  }
+];
+
+async function seedDefaultRecipes(restaurantId) {
+  if (!restaurantId) return { count: 0 };
+  let count = 0;
+  if (useDb) {
+    const invItems = await Inventory.find({ restaurantId });
+    const foodItems = await FoodItem.find({ restaurantId });
+
+    for (const rDef of defaultRecipeCatalog) {
+      const matchingFood = foodItems.find(f => f.name.toLowerCase() === rDef.dishName.toLowerCase());
+      const mappedIngredients = [];
+
+      for (const ing of rDef.ingredients) {
+        const inv = invItems.find(i => i.name.toLowerCase() === ing.name.toLowerCase());
+        if (inv) {
+          mappedIngredients.push({
+            inventoryItemId: inv.id,
+            inventoryItemName: inv.name,
+            quantity: ing.quantity,
+            unit: inv.unit || ing.unit
+          });
+        }
+      }
+
+      const existingRecipe = await Recipe.findOne({
+        restaurantId,
+        dishName: { $regex: new RegExp(`^${rDef.dishName.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') }
+      });
+
+      if (existingRecipe) {
+        existingRecipe.dishId = matchingFood ? matchingFood.id : existingRecipe.dishId;
+        existingRecipe.category = rDef.category;
+        existingRecipe.appliance = rDef.appliance;
+        existingRecipe.yieldPortions = rDef.yieldPortions || 1;
+        existingRecipe.ingredients = mappedIngredients;
+        existingRecipe.notes = rDef.notes;
+        existingRecipe.isActive = true;
+        await existingRecipe.save();
+        count++;
+      } else {
+        const newRecipe = new Recipe({
+          id: uuidv4(),
+          restaurantId,
+          dishName: rDef.dishName,
+          dishId: matchingFood ? matchingFood.id : null,
+          category: rDef.category,
+          appliance: rDef.appliance,
+          yieldPortions: rDef.yieldPortions || 1,
+          ingredients: mappedIngredients,
+          notes: rDef.notes,
+          isActive: true
+        });
+        await newRecipe.save();
+        count++;
+      }
+    }
+    return { count, message: `Successfully synced ${count} recipes` };
+  }
+
+  if (!store.recipes) store.recipes = [];
+  return { count: store.recipes.length, message: `In-memory recipes ready` };
+}
+
+async function listRecipes(restaurantId) {
+  if (useDb) {
+    const query = restaurantId ? { restaurantId } : {};
+    const rows = await Recipe.find(query).sort({ createdAt: -1 });
+    return rows.map(r => ({
+      id: r.id,
+      restaurantId: r.restaurantId,
+      dishName: r.dishName,
+      dishId: r.dishId,
+      category: r.category,
+      appliance: r.appliance,
+      yieldPortions: r.yieldPortions || 1,
+      ingredients: r.ingredients || [],
+      notes: r.notes,
+      isActive: r.isActive !== undefined ? r.isActive : true,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }));
+  }
+  if (!store.recipes) store.recipes = [];
+  return store.recipes.filter(r => !restaurantId || r.restaurantId === restaurantId);
+}
+
+async function createRecipe(data) {
+  const id = uuidv4();
+  if (useDb) {
+    const recipe = new Recipe({
+      id,
+      restaurantId: data.restaurantId,
+      dishName: data.dishName,
+      dishId: data.dishId || null,
+      category: data.category || 'General',
+      appliance: data.appliance || 'Assembly',
+      yieldPortions: data.yieldPortions || 1,
+      ingredients: data.ingredients || [],
+      notes: data.notes || null,
+      isActive: data.isActive !== undefined ? data.isActive : true
+    });
+    await recipe.save();
+    return {
+      id: recipe.id,
+      restaurantId: recipe.restaurantId,
+      dishName: recipe.dishName,
+      dishId: recipe.dishId,
+      category: recipe.category,
+      appliance: recipe.appliance,
+      yieldPortions: recipe.yieldPortions,
+      ingredients: recipe.ingredients,
+      notes: recipe.notes,
+      isActive: recipe.isActive,
+      createdAt: recipe.createdAt,
+      updatedAt: recipe.updatedAt
+    };
+  }
+  if (!store.recipes) store.recipes = [];
+  const now = new Date().toISOString();
+  const recipe = {
+    id,
+    restaurantId: data.restaurantId,
+    dishName: data.dishName,
+    dishId: data.dishId || null,
+    category: data.category || 'General',
+    appliance: data.appliance || 'Assembly',
+    yieldPortions: data.yieldPortions || 1,
+    ingredients: data.ingredients || [],
+    notes: data.notes || null,
+    isActive: data.isActive !== undefined ? data.isActive : true,
+    createdAt: now,
+    updatedAt: now
+  };
+  store.recipes.push(recipe);
+  return recipe;
+}
+
+async function getRecipe(id) {
+  if (useDb) {
+    const r = await Recipe.findOne({ id });
+    if (!r) return null;
+    return {
+      id: r.id,
+      restaurantId: r.restaurantId,
+      dishName: r.dishName,
+      dishId: r.dishId,
+      category: r.category,
+      appliance: r.appliance,
+      yieldPortions: r.yieldPortions,
+      ingredients: r.ingredients || [],
+      notes: r.notes,
+      isActive: r.isActive,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    };
+  }
+  if (!store.recipes) store.recipes = [];
+  return store.recipes.find(r => r.id === id) || null;
+}
+
+async function updateRecipe(id, data) {
+  if (useDb) {
+    const row = await Recipe.findOne({ id });
+    if (!row) return null;
+    if (data.dishName !== undefined) row.dishName = data.dishName;
+    if (data.dishId !== undefined) row.dishId = data.dishId;
+    if (data.category !== undefined) row.category = data.category;
+    if (data.appliance !== undefined) row.appliance = data.appliance;
+    if (data.yieldPortions !== undefined) row.yieldPortions = data.yieldPortions;
+    if (data.ingredients !== undefined) row.ingredients = data.ingredients;
+    if (data.notes !== undefined) row.notes = data.notes;
+    if (data.isActive !== undefined) row.isActive = data.isActive;
+    await row.save();
+    return {
+      id: row.id,
+      restaurantId: row.restaurantId,
+      dishName: row.dishName,
+      dishId: row.dishId,
+      category: row.category,
+      appliance: row.appliance,
+      yieldPortions: row.yieldPortions,
+      ingredients: row.ingredients,
+      notes: row.notes,
+      isActive: row.isActive,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
+  }
+  if (!store.recipes) store.recipes = [];
+  const idx = store.recipes.findIndex(r => r.id === id);
+  if (idx === -1) return null;
+  store.recipes[idx] = {
+    ...store.recipes[idx],
+    ...data,
+    updatedAt: new Date().toISOString()
+  };
+  return store.recipes[idx];
+}
+
+async function deleteRecipe(id) {
+  if (useDb) {
+    const res = await Recipe.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+  if (!store.recipes) store.recipes = [];
+  const idx = store.recipes.findIndex(r => r.id === id);
+  if (idx === -1) return false;
+  store.recipes.splice(idx, 1);
+  return true;
+}
+
+async function deductInventoryForItems(restaurantId, items, refId, refType, dateStr) {
+  // TEMPORARILY DISABLED: Bypass inventory deduction until accurate inventory items and recipes are fully set up.
+  return;
+
+  if (!restaurantId || !items || !Array.isArray(items) || items.length === 0) return;
+  const dateVal = dateStr || new Date().toLocaleDateString('sv');
+
+  for (const item of items) {
+    const itemName = item.name || item.dishName || item.foodName;
+    const itemQty = Number(item.quantity || 1);
+    if (!itemName || itemQty <= 0) continue;
+
+    let recipe = null;
+    if (useDb) {
+      recipe = await Recipe.findOne({
+        restaurantId,
+        dishName: { $regex: new RegExp(`^${itemName.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') },
+        isActive: true
+      });
+      if (!recipe) {
+        // Try cleaned name without brackets (e.g. "Dahi Kebab (6pc)" matches "Dahi Kebab")
+        const cleanItemName = itemName.replace(/\s*\([^)]*\)/g, '').trim();
+        recipe = await Recipe.findOne({
+          restaurantId,
+          $or: [
+            { dishName: { $regex: new RegExp(`^${cleanItemName.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'i') } },
+            { dishName: { $regex: new RegExp(`${cleanItemName.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'i') } }
+          ],
+          isActive: true
+        });
+      }
+      if (!recipe && (item.id || item.foodItemId)) {
+        recipe = await Recipe.findOne({
+          restaurantId,
+          dishId: item.id || item.foodItemId,
+          isActive: true
+        });
+      }
+    } else {
+      if (!store.recipes) store.recipes = [];
+      const cleanItemName = itemName.replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+      recipe = store.recipes.find(r => (!r.restaurantId || r.restaurantId === restaurantId) && 
+        (r.dishName.toLowerCase() === itemName.toLowerCase() || r.dishName.toLowerCase().startsWith(cleanItemName) || cleanItemName.startsWith(r.dishName.toLowerCase())) && 
+        r.isActive !== false);
+    }
+
+    if (recipe && recipe.ingredients && Array.isArray(recipe.ingredients)) {
+      const portions = Number(recipe.yieldPortions || 1);
+      for (const ing of recipe.ingredients) {
+        const deductQty = (Number(ing.quantity || 0) / portions) * itemQty;
+        if (deductQty <= 0) continue;
+
+        if (useDb) {
+          let inv = null;
+          if (ing.inventoryItemId) {
+            inv = await Inventory.findOne({ id: ing.inventoryItemId, restaurantId });
+          }
+          if (!inv && ing.inventoryItemName) {
+            inv = await Inventory.findOne({
+              restaurantId,
+              name: { $regex: new RegExp(`^${ing.inventoryItemName.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') }
+            });
+          }
+
+          if (inv) {
+            inv.quantity = Math.max(0, Math.round(((inv.quantity || 0) - deductQty) * 1000) / 1000);
+            await inv.save();
+
+            const deductionLog = new InventoryDeduction({
+              id: uuidv4(),
+              restaurantId,
+              date: dateVal,
+              orderId: refType === 'order' ? refId : null,
+              billId: refType === 'billing' ? refId : null,
+              dishName: recipe.dishName || itemName,
+              inventoryItemId: inv.id,
+              inventoryItemName: inv.name,
+              quantity: Math.round(deductQty * 1000) / 1000,
+              unit: inv.unit || ing.unit || 'units',
+              source: refType || 'order'
+            });
+            await deductionLog.save();
+          }
+        } else {
+          if (!store.inventory) store.inventory = [];
+          if (!store.inventoryDeductions) store.inventoryDeductions = [];
+
+          const inv = store.inventory.find(i => (!i.restaurantId || i.restaurantId === restaurantId) && (i.id === ing.inventoryItemId || i.name.toLowerCase() === (ing.inventoryItemName || '').toLowerCase()));
+          if (inv) {
+            inv.quantity = Math.max(0, Math.round(((inv.quantity || 0) - deductQty) * 1000) / 1000);
+            store.inventoryDeductions.push({
+              id: uuidv4(),
+              restaurantId,
+              date: dateVal,
+              orderId: refType === 'order' ? refId : null,
+              billId: refType === 'billing' ? refId : null,
+              dishName: recipe.dishName || itemName,
+              inventoryItemId: inv.id,
+              inventoryItemName: inv.name,
+              quantity: Math.round(deductQty * 1000) / 1000,
+              unit: inv.unit || ing.unit || 'units',
+              source: refType || 'order',
+              createdAt: new Date().toISOString()
+            });
+          }
+        }
+      }
+    }
+  }
+}
+
+async function listInventoryDeductions(restaurantId, date) {
+  const dateVal = date || new Date().toLocaleDateString('sv');
+  if (useDb) {
+    const query = { restaurantId, date: dateVal };
+    const rows = await InventoryDeduction.find(query).sort({ createdAt: -1 });
+    return rows.map(r => ({
+      id: r.id,
+      restaurantId: r.restaurantId,
+      date: r.date,
+      orderId: r.orderId,
+      billId: r.billId,
+      dishName: r.dishName,
+      inventoryItemId: r.inventoryItemId,
+      inventoryItemName: r.inventoryItemName,
+      quantity: r.quantity,
+      unit: r.unit,
+      source: r.source,
+      createdAt: r.createdAt
+    }));
+  }
+  if (!store.inventoryDeductions) store.inventoryDeductions = [];
+  return store.inventoryDeductions.filter(d => (!restaurantId || d.restaurantId === restaurantId) && d.date === dateVal);
+}
+
+async function getDailyInventoryReport(restaurantId, date) {
+  const dateVal = date || new Date().toLocaleDateString('sv');
+  
+  if (useDb) {
+    const inventoryList = await Inventory.find(restaurantId ? { restaurantId } : {});
+    const purchaseBills = await PurchaseBill.find({ restaurantId, date: dateVal });
+    const deductions = await InventoryDeduction.find({ restaurantId, date: dateVal });
+    const wastages = await Wastage.find({ restaurantId, date: dateVal });
+
+    // Aggregate purchases per item
+    const purchaseMap = {};
+    for (const pb of purchaseBills) {
+      if (pb.items && Array.isArray(pb.items)) {
+        for (const it of pb.items) {
+          const key = it.inventoryItemId || (it.name || '').toLowerCase();
+          purchaseMap[key] = (purchaseMap[key] || 0) + Number(it.quantity || 0);
+        }
+      }
+    }
+
+    // Aggregate deductions per item
+    const deductionMap = {};
+    for (const d of deductions) {
+      const key = d.inventoryItemId || (d.inventoryItemName || '').toLowerCase();
+      deductionMap[key] = (deductionMap[key] || 0) + Number(d.quantity || 0);
+    }
+
+    // Aggregate wastage per item
+    const wastageMap = {};
+    for (const w of wastages) {
+      const key = w.inventoryItemId || (w.inventoryItemName || '').toLowerCase();
+      wastageMap[key] = (wastageMap[key] || 0) + Number(w.quantity || 0);
+    }
+
+    let healthyCount = 0;
+    let lowStockCount = 0;
+    let outOfStockCount = 0;
+    let totalPurchasesSum = 0;
+    let totalDeductionsSum = 0;
+    let totalWastageSum = 0;
+
+    const itemsReport = inventoryList.map(inv => {
+      const purchased = purchaseMap[inv.id] || purchaseMap[inv.name.toLowerCase()] || 0;
+      const deducted = deductionMap[inv.id] || deductionMap[inv.name.toLowerCase()] || 0;
+      const wasted = wastageMap[inv.id] || wastageMap[inv.name.toLowerCase()] || 0;
+      const closingStock = Math.round((inv.quantity || 0) * 1000) / 1000;
+      const openingStock = Math.max(0, Math.round((closingStock - purchased + deducted + wasted) * 1000) / 1000);
+      const threshold = inv.threshold !== undefined ? inv.threshold : 10;
+
+      let status = 'healthy';
+      if (closingStock <= 0) {
+        status = 'out';
+        outOfStockCount++;
+      } else if (closingStock <= threshold) {
+        status = 'low';
+        lowStockCount++;
+      } else {
+        healthyCount++;
+      }
+
+      totalPurchasesSum += purchased;
+      totalDeductionsSum += deducted;
+      totalWastageSum += wasted;
+
+      return {
+        id: inv.id,
+        name: inv.name,
+        unit: inv.unit || 'units',
+        threshold,
+        openingStock,
+        purchased: Math.round(purchased * 1000) / 1000,
+        deducted: Math.round(deducted * 1000) / 1000,
+        wasted: Math.round(wasted * 1000) / 1000,
+        closingStock,
+        status
+      };
+    });
+
+    return {
+      date: dateVal,
+      restaurantId,
+      summary: {
+        totalItemsCount: itemsReport.length,
+        healthyCount,
+        lowStockCount,
+        outOfStockCount,
+        totalPurchasesSum: Math.round(totalPurchasesSum * 1000) / 1000,
+        totalDeductionsSum: Math.round(totalDeductionsSum * 1000) / 1000,
+        totalWastageSum: Math.round(totalWastageSum * 1000) / 1000
+      },
+      items: itemsReport,
+      deductionLogs: deductions.map(d => ({
+        id: d.id,
+        dishName: d.dishName,
+        inventoryItemName: d.inventoryItemName,
+        quantity: d.quantity,
+        unit: d.unit,
+        source: d.source,
+        orderId: d.orderId,
+        createdAt: d.createdAt
+      }))
+    };
+  }
+
+  // in-memory fallback
+  const invList = (store.inventory || []).filter(i => !restaurantId || i.restaurantId === restaurantId);
+  return {
+    date: dateVal,
+    restaurantId,
+    summary: { totalItemsCount: invList.length, healthyCount: invList.length, lowStockCount: 0, outOfStockCount: 0, totalPurchasesSum: 0, totalDeductionsSum: 0, totalWastageSum: 0 },
+    items: invList.map(i => ({ id: i.id, name: i.name, unit: i.unit || 'units', threshold: i.threshold || 10, openingStock: i.quantity || 0, purchased: 0, deducted: 0, wasted: 0, closingStock: i.quantity || 0, status: (i.quantity || 0) <= 0 ? 'out' : ((i.quantity || 0) <= (i.threshold || 10) ? 'low' : 'healthy') })),
+    deductionLogs: []
+  };
+}
+
+// =========================================================================
+// BANK TRANSACTIONS & TREASURY
+// =========================================================================
+function mapBankTransaction(b) {
+  return {
+    id: b.id,
+    restaurantId: b.restaurantId,
+    type: b.type,
+    amount: b.amount,
+    date: b.date,
+    source: b.source,
+    description: b.description,
+    referenceNumber: b.referenceNumber,
+    createdAt: b.createdAt,
+    updatedAt: b.updatedAt
+  };
+}
+
+async function listBankTransactions(restaurantId, filter = {}) {
+  if (useDb) {
+    const query = {};
+    if (restaurantId) query.restaurantId = restaurantId;
+    if (filter.type) query.type = filter.type;
+    if (filter.startDate && filter.endDate) {
+      query.date = { $gte: filter.startDate, $lte: filter.endDate };
+    } else if (filter.startDate) {
+      query.date = { $gte: filter.startDate };
+    } else if (filter.endDate) {
+      query.date = { $lte: filter.endDate };
+    }
+    const rows = await BankTransaction.find(query).sort({ date: -1, createdAt: -1 });
+    return rows.map(mapBankTransaction);
+  }
+  if (!store.bankTransactions) store.bankTransactions = [];
+  return store.bankTransactions
+    .filter(b => {
+      if (restaurantId && b.restaurantId !== restaurantId) return false;
+      if (filter.type && b.type !== filter.type) return false;
+      if (filter.startDate && b.date < filter.startDate) return false;
+      if (filter.endDate && b.date > filter.endDate) return false;
+      return true;
+    })
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+}
+
+async function createBankTransaction(data) {
+  const id = uuidv4();
+  const txData = {
+    id,
+    restaurantId: data.restaurantId || 'default-restaurant-id',
+    type: data.type || 'deposit',
+    amount: Number(data.amount || 0),
+    date: data.date || new Date().toISOString().split('T')[0],
+    source: data.source || (data.type === 'opening_balance' ? 'Opening Balance' : (data.type === 'deduction' ? 'Account Withdrawal' : 'Deposit')),
+    description: data.description || '',
+    referenceNumber: data.referenceNumber || null
+  };
+  if (useDb) {
+    const tx = new BankTransaction(txData);
+    await tx.save();
+    return mapBankTransaction(tx);
+  }
+  if (!store.bankTransactions) store.bankTransactions = [];
+  store.bankTransactions.push(txData);
+  return mapBankTransaction(txData);
+}
+
+async function getBankTransaction(id) {
+  if (useDb) {
+    const row = await BankTransaction.findOne({ id });
+    return row ? mapBankTransaction(row) : null;
+  }
+  if (!store.bankTransactions) store.bankTransactions = [];
+  const found = store.bankTransactions.find(b => b.id === id);
+  return found ? mapBankTransaction(found) : null;
+}
+
+async function updateBankTransaction(id, data) {
+  if (useDb) {
+    const updateData = {};
+    if (data.type !== undefined) updateData.type = data.type;
+    if (data.amount !== undefined) updateData.amount = Number(data.amount);
+    if (data.date !== undefined) updateData.date = data.date;
+    if (data.source !== undefined) updateData.source = data.source;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.referenceNumber !== undefined) updateData.referenceNumber = data.referenceNumber;
+    if (data.restaurantId !== undefined) updateData.restaurantId = data.restaurantId;
+
+    const row = await BankTransaction.findOneAndUpdate({ id }, { $set: updateData }, { new: true });
+    return row ? mapBankTransaction(row) : null;
+  }
+  if (!store.bankTransactions) store.bankTransactions = [];
+  const idx = store.bankTransactions.findIndex(b => b.id === id);
+  if (idx === -1) return null;
+  const current = store.bankTransactions[idx];
+  store.bankTransactions[idx] = {
+    ...current,
+    ...data,
+    amount: data.amount !== undefined ? Number(data.amount) : current.amount
+  };
+  return mapBankTransaction(store.bankTransactions[idx]);
+}
+
+async function deleteBankTransaction(id) {
+  if (useDb) {
+    const res = await BankTransaction.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+  if (!store.bankTransactions) store.bankTransactions = [];
+  const idx = store.bankTransactions.findIndex(b => b.id === id);
+  if (idx === -1) return false;
+  store.bankTransactions.splice(idx, 1);
+  return true;
+}
+
+async function getBankSummary(restaurantId, startDate, endDate) {
+  // 1. Fetch Bank Transactions
+  const bankQuery = {};
+  if (restaurantId) bankQuery.restaurantId = restaurantId;
+  let bankRows = [];
+  if (useDb) {
+    bankRows = await BankTransaction.find(bankQuery);
+  } else {
+    bankRows = (store.bankTransactions || []).filter(b => !restaurantId || b.restaurantId === restaurantId);
+  }
+
+  // Find latest opening balance to determine cutoff date (do not calculate prior transactions)
+  const openingTransactions = bankRows
+    .filter(b => b.type === 'opening_balance')
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  
+  const latestOpeningTx = openingTransactions.length > 0 ? openingTransactions[0] : null;
+  const cutoffDate = latestOpeningTx && latestOpeningTx.date ? latestOpeningTx.date.substring(0, 10) : '';
+
+  let openingBalance = 0;
+  let otherDeposits = 0;
+  let totalDeductions = 0;
+
+  for (const b of bankRows) {
+    const d = (b.date || '').substring(0, 10);
+    const amt = Number(b.amount || 0);
+
+    if (b.type === 'opening_balance') {
+      if (!cutoffDate || d === cutoffDate) {
+        openingBalance += amt;
+      }
+    } else {
+      // Don't take back entries for calculations
+      if (cutoffDate && d < cutoffDate) continue;
+
+      if (b.type === 'deduction') {
+        totalDeductions += amt;
+      } else if (b.type === 'deposit') {
+        otherDeposits += amt;
+      }
+    }
+  }
+
+  // 2. Fetch Payouts (Swiggy / Zomato)
+  let payoutRows = [];
+  const payoutQuery = restaurantId ? { restaurantId } : {};
+  if (useDb) {
+    payoutRows = await Payout.find(payoutQuery);
+  } else {
+    payoutRows = (store.payouts || []).filter(p => !restaurantId || p.restaurantId === restaurantId);
+  }
+
+  let swiggyTotal = 0;
+  let zomatoTotal = 0;
+  for (const p of payoutRows) {
+    const d = (p.date || '').substring(0, 10);
+    // Don't take back entries for calculations
+    if (cutoffDate && d < cutoffDate) continue;
+
+    const amt = Number(p.amount || 0);
+    if ((p.platform || '').toLowerCase() === 'swiggy') {
+      swiggyTotal += amt;
+    } else if ((p.platform || '').toLowerCase() === 'zomato') {
+      zomatoTotal += amt;
+    }
+  }
+
+  // 3. Fetch UPI Collections from Billing
+  let billRows = [];
+  const billQuery = restaurantId ? { restaurantId } : {};
+  if (useDb) {
+    billRows = await Billing.find(billQuery);
+  } else {
+    billRows = (store.billings || []).filter(b => !restaurantId || b.restaurantId === restaurantId);
+  }
+
+  let upiOrdersTotal = 0;
+  for (const b of billRows) {
+    const d = (b.date || '').substring(0, 10);
+    // Don't take back entries for calculations
+    if (cutoffDate && d < cutoffDate) continue;
+
+    const grandTotal = (b.amount || 0) + (b.cgst || 0) + (b.sgst || 0);
+    const hasSplit = (b.cashAmount !== undefined && b.cashAmount > 0) || (b.upiAmount !== undefined && b.upiAmount > 0);
+    if (hasSplit) {
+      upiOrdersTotal += (b.upiAmount || 0);
+    } else if ((b.paymentMode || '').toLowerCase() === 'upi') {
+      upiOrdersTotal += grandTotal;
+    }
+  }
+
+  const currentBalance = Math.round((openingBalance + upiOrdersTotal + swiggyTotal + zomatoTotal + otherDeposits - totalDeductions) * 100) / 100;
+
+  return {
+    currentBalance,
+    effectiveOpeningDate: cutoffDate || null,
+    openingBalance: Math.round(openingBalance * 100) / 100,
+    upiOrdersTotal: Math.round(upiOrdersTotal * 100) / 100,
+    swiggyTotal: Math.round(swiggyTotal * 100) / 100,
+    zomatoTotal: Math.round(zomatoTotal * 100) / 100,
+    otherDeposits: Math.round(otherDeposits * 100) / 100,
+    totalDeductions: Math.round(totalDeductions * 100) / 100,
+    totalInflows: Math.round((openingBalance + upiOrdersTotal + swiggyTotal + zomatoTotal + otherDeposits) * 100) / 100,
+    transactionsCount: bankRows.length + payoutRows.length
+  };
 }
