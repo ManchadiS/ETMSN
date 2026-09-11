@@ -3372,12 +3372,11 @@ async function listBankTransactions(restaurantId, filter = {}) {
     const query = {};
     if (restaurantId) query.restaurantId = restaurantId;
     if (filter.type) query.type = filter.type;
-    if (filter.startDate && filter.endDate) {
-      query.date = { $gte: filter.startDate, $lte: filter.endDate };
-    } else if (filter.startDate) {
-      query.date = { $gte: filter.startDate };
-    } else if (filter.endDate) {
-      query.date = { $lte: filter.endDate };
+    if (filter.type && filter.type !== 'all') query.type = filter.type;
+    if (filter.startDate || filter.endDate) {
+      query.date = {};
+      if (filter.startDate) query.date.$gte = filter.startDate;
+      if (filter.endDate) query.date.$lte = filter.endDate;
     }
     const rows = await BankTransaction.find(query).sort({ date: -1, createdAt: -1 });
     return rows.map(mapBankTransaction);
@@ -3386,7 +3385,7 @@ async function listBankTransactions(restaurantId, filter = {}) {
   return store.bankTransactions
     .filter(b => {
       if (restaurantId && b.restaurantId !== restaurantId) return false;
-      if (filter.type && b.type !== filter.type) return false;
+      if (filter.type && filter.type !== 'all' && b.type !== filter.type) return false;
       if (filter.startDate && b.date < filter.startDate) return false;
       if (filter.endDate && b.date > filter.endDate) return false;
       return true;
@@ -3418,7 +3417,12 @@ async function createBankTransaction(data) {
 
 async function getBankTransaction(id) {
   if (useDb) {
-    const row = await BankTransaction.findOne({ id });
+    const mongoose = require('mongoose');
+    const conditions = [{ id: String(id) }];
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      conditions.push({ _id: new mongoose.Types.ObjectId(id) });
+    }
+    const row = await BankTransaction.findOne({ $or: conditions });
     return row ? mapBankTransaction(row) : null;
   }
   if (!store.bankTransactions) store.bankTransactions = [];
@@ -3428,6 +3432,7 @@ async function getBankTransaction(id) {
 
 async function updateBankTransaction(id, data) {
   if (useDb) {
+    const mongoose = require('mongoose');
     const updateData = {};
     if (data.type !== undefined) updateData.type = data.type;
     if (data.amount !== undefined) updateData.amount = Number(data.amount);
@@ -3437,7 +3442,11 @@ async function updateBankTransaction(id, data) {
     if (data.referenceNumber !== undefined) updateData.referenceNumber = data.referenceNumber;
     if (data.restaurantId !== undefined) updateData.restaurantId = data.restaurantId;
 
-    const row = await BankTransaction.findOneAndUpdate({ id }, { $set: updateData }, { new: true });
+    const conditions = [{ id: String(id) }];
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      conditions.push({ _id: new mongoose.Types.ObjectId(id) });
+    }
+    const row = await BankTransaction.findOneAndUpdate({ $or: conditions }, { $set: updateData }, { new: true });
     return row ? mapBankTransaction(row) : null;
   }
   if (!store.bankTransactions) store.bankTransactions = [];
@@ -3454,7 +3463,12 @@ async function updateBankTransaction(id, data) {
 
 async function deleteBankTransaction(id) {
   if (useDb) {
-    const res = await BankTransaction.deleteOne({ id });
+    const mongoose = require('mongoose');
+    const conditions = [{ id: String(id) }];
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      conditions.push({ _id: new mongoose.Types.ObjectId(id) });
+    }
+    const res = await BankTransaction.deleteOne({ $or: conditions });
     return res.deletedCount > 0;
   }
   if (!store.bankTransactions) store.bankTransactions = [];
