@@ -159,7 +159,9 @@ if (useDb) {
     price: { type: Number, required: true },
     description: { type: String },
     category: { type: String },
-    active: { type: Boolean, default: true }
+    active: { type: Boolean, default: true },
+    isVeg: { type: Boolean },
+    foodType: { type: String, enum: ['veg', 'non-veg'] }
   }, { timestamps: true, id: false });
 
   const ExpenseSchema = new mongoose.Schema({
@@ -403,17 +405,50 @@ const store = {
   wastages: []
 };
 
+function determineVeg(item) {
+  if (item && item.isVeg !== undefined && item.isVeg !== null) return Boolean(item.isVeg);
+  if (item && item.foodType !== undefined && item.foodType !== null) return item.foodType === 'veg';
+  const name = (item?.name || '').toLowerCase();
+  if (name.includes('chicken') || name.includes('egg') || name.includes('fish') || name.includes('mutton') || name.includes('meat') || name.includes('prawn') || name.includes('drumstick') || name.includes('shev puri') || name.includes('sev puri')) {
+    return false;
+  }
+  return true;
+}
+
 async function listFoodItems(restaurantId) {
   if (useDb) {
     const query = restaurantId ? { restaurantId } : {};
     const items = await FoodItem.find(query);
-    return items.map(r => ({ id: r.id, restaurantId: r.restaurantId, name: r.name, price: r.price, description: r.description, category: r.category, active: r.active !== false }));
+    return items.map(r => {
+      const isVeg = determineVeg(r);
+      return {
+        id: r.id,
+        restaurantId: r.restaurantId,
+        name: r.name,
+        price: r.price,
+        description: r.description,
+        category: r.category,
+        active: r.active !== false,
+        isVeg,
+        foodType: isVeg ? 'veg' : 'non-veg'
+      };
+    });
   }
-  return (store.foodItems || []).filter(f => !restaurantId || f.restaurantId === restaurantId).map(f => ({ ...f, active: f.active !== false }));
+  return (store.foodItems || []).filter(f => !restaurantId || f.restaurantId === restaurantId).map(f => {
+    const isVeg = determineVeg(f);
+    return {
+      ...f,
+      active: f.active !== false,
+      isVeg,
+      foodType: isVeg ? 'veg' : 'non-veg'
+    };
+  });
 }
 
 async function createFoodItem(data) {
   const id = uuidv4();
+  const isVeg = data.isVeg !== undefined ? Boolean(data.isVeg) : (data.foodType ? data.foodType === 'veg' : determineVeg(data));
+  const foodType = isVeg ? 'veg' : 'non-veg';
   if (useDb) {
     const item = new FoodItem({
       id,
@@ -422,10 +457,22 @@ async function createFoodItem(data) {
       price: data.price,
       description: data.description || null,
       category: data.category || null,
-      active: data.active !== undefined ? data.active : true
+      active: data.active !== undefined ? data.active : true,
+      isVeg,
+      foodType
     });
     await item.save();
-    return { id: item.id, restaurantId: item.restaurantId, name: item.name, price: item.price, description: item.description, category: item.category, active: item.active };
+    return {
+      id: item.id,
+      restaurantId: item.restaurantId,
+      name: item.name,
+      price: item.price,
+      description: item.description,
+      category: item.category,
+      active: item.active,
+      isVeg,
+      foodType
+    };
   }
   if (!store.foodItems) store.foodItems = [];
   const item = {
@@ -435,7 +482,9 @@ async function createFoodItem(data) {
     price: data.price,
     description: data.description || null,
     category: data.category || null,
-    active: data.active !== undefined ? data.active : true
+    active: data.active !== undefined ? data.active : true,
+    isVeg,
+    foodType
   };
   store.foodItems.push(item);
   return item;
@@ -445,12 +494,29 @@ async function getFoodItem(id) {
   if (useDb) {
     const item = await FoodItem.findOne({ id });
     if (!item) return null;
-    return { id: item.id, restaurantId: item.restaurantId, name: item.name, price: item.price, description: item.description, category: item.category, active: item.active !== false };
+    const isVeg = determineVeg(item);
+    return {
+      id: item.id,
+      restaurantId: item.restaurantId,
+      name: item.name,
+      price: item.price,
+      description: item.description,
+      category: item.category,
+      active: item.active !== false,
+      isVeg,
+      foodType: isVeg ? 'veg' : 'non-veg'
+    };
   }
   if (!store.foodItems) store.foodItems = [];
   const found = store.foodItems.find(f => f.id === id);
   if (!found) return null;
-  return { ...found, active: found.active !== false };
+  const isVeg = determineVeg(found);
+  return {
+    ...found,
+    active: found.active !== false,
+    isVeg,
+    foodType: isVeg ? 'veg' : 'non-veg'
+  };
 }
 
 async function updateFoodItem(id, data) {
@@ -463,13 +529,37 @@ async function updateFoodItem(id, data) {
     if (data.category !== undefined) item.category = data.category;
     if (data.restaurantId !== undefined) item.restaurantId = data.restaurantId;
     if (data.active !== undefined) item.active = data.active;
+    if (data.isVeg !== undefined) {
+      item.isVeg = Boolean(data.isVeg);
+      item.foodType = item.isVeg ? 'veg' : 'non-veg';
+    } else if (data.foodType !== undefined) {
+      item.foodType = data.foodType;
+      item.isVeg = data.foodType === 'veg';
+    }
     await item.save();
-    return { id: item.id, restaurantId: item.restaurantId, name: item.name, price: item.price, description: item.description, category: item.category, active: item.active };
+    const isVeg = determineVeg(item);
+    return {
+      id: item.id,
+      restaurantId: item.restaurantId,
+      name: item.name,
+      price: item.price,
+      description: item.description,
+      category: item.category,
+      active: item.active,
+      isVeg,
+      foodType: isVeg ? 'veg' : 'non-veg'
+    };
   }
   if (!store.foodItems) store.foodItems = [];
   const idx = store.foodItems.findIndex(f => f.id === id);
   if (idx === -1) return null;
-  store.foodItems[idx] = { ...store.foodItems[idx], ...data };
+  const isVeg = data.isVeg !== undefined ? Boolean(data.isVeg) : (data.foodType ? data.foodType === 'veg' : store.foodItems[idx].isVeg);
+  store.foodItems[idx] = {
+    ...store.foodItems[idx],
+    ...data,
+    isVeg: isVeg !== undefined ? isVeg : determineVeg(store.foodItems[idx]),
+    foodType: (isVeg !== undefined ? isVeg : determineVeg(store.foodItems[idx])) ? 'veg' : 'non-veg'
+  };
   return { ...store.foodItems[idx], active: store.foodItems[idx].active !== false };
 }
 
