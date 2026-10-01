@@ -149,7 +149,14 @@ if (useDb) {
   const RestaurantSchema = new mongoose.Schema({
     id: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    address: { type: String }
+    address: { type: String },
+    gstin: { type: String },
+    legalName: { type: String },
+    tradeName: { type: String },
+    state: { type: String },
+    stateCode: { type: String },
+    filingFrequency: { type: String, default: 'monthly' },
+    defaultGstScheme: { type: String, default: 'restaurant_5_no_itc' }
   }, { timestamps: true, id: false });
 
   const FoodItemSchema = new mongoose.Schema({
@@ -193,7 +200,9 @@ if (useDb) {
     paymentMode: { type: String, default: 'Cash' },
     orderType: { type: String, default: 'dinein' },
     cashAmount: { type: Number, default: 0 },
-    upiAmount: { type: Number, default: 0 }
+    upiAmount: { type: Number, default: 0 },
+    customerGstin: { type: String },
+    isB2B: { type: Boolean, default: false }
   }, { timestamps: true, id: false });
 
   const UserSchema = new mongoose.Schema({
@@ -257,10 +266,17 @@ if (useDb) {
     id: { type: String, required: true, unique: true },
     restaurantId: { type: String, required: true },
     supplierName: { type: String, required: true },
+    supplierGstin: { type: String },
     billNumber: { type: String },
     date: { type: String },
     items: { type: Array, default: [] },
     totalAmount: { type: Number, required: true },
+    taxableAmount: { type: Number },
+    cgst: { type: Number, default: 0 },
+    sgst: { type: Number, default: 0 },
+    igst: { type: Number, default: 0 },
+    isItcEligible: { type: Boolean, default: false },
+    reverseCharge: { type: Boolean, default: false },
     paymentMode: { type: String, default: 'Cash' },
     status: { type: String, default: 'paid' }
   }, { timestamps: true, id: false });
@@ -960,20 +976,75 @@ async function deleteExpense(id) {
 async function listRestaurants() {
   if (useDb) {
     const rows = await Restaurant.find({});
-    return rows.map(r => ({ id: r.id, name: r.name, address: r.address }));
+    return rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      address: r.address,
+      gstin: r.gstin || '',
+      legalName: r.legalName || '',
+      tradeName: r.tradeName || '',
+      state: r.state || '',
+      stateCode: r.stateCode || '',
+      filingFrequency: r.filingFrequency || 'monthly',
+      defaultGstScheme: r.defaultGstScheme || 'restaurant_5_no_itc'
+    }));
   }
-  return store.restaurants || [];
+  return (store.restaurants || []).map(r => ({
+    id: r.id,
+    name: r.name,
+    address: r.address,
+    gstin: r.gstin || '',
+    legalName: r.legalName || '',
+    tradeName: r.tradeName || '',
+    state: r.state || '',
+    stateCode: r.stateCode || '',
+    filingFrequency: r.filingFrequency || 'monthly',
+    defaultGstScheme: r.defaultGstScheme || 'restaurant_5_no_itc'
+  }));
 }
 
 async function createRestaurant(data) {
   const id = uuidv4();
   if (useDb) {
-    const restaurant = new Restaurant({ id, name: data.name, address: data.address || null });
+    const restaurant = new Restaurant({
+      id,
+      name: data.name,
+      address: data.address || null,
+      gstin: data.gstin || '',
+      legalName: data.legalName || '',
+      tradeName: data.tradeName || '',
+      state: data.state || '',
+      stateCode: data.stateCode || '',
+      filingFrequency: data.filingFrequency || 'monthly',
+      defaultGstScheme: data.defaultGstScheme || 'restaurant_5_no_itc'
+    });
     await restaurant.save();
-    return { id: restaurant.id, name: restaurant.name, address: restaurant.address };
+    return {
+      id: restaurant.id,
+      name: restaurant.name,
+      address: restaurant.address,
+      gstin: restaurant.gstin,
+      legalName: restaurant.legalName,
+      tradeName: restaurant.tradeName,
+      state: restaurant.state,
+      stateCode: restaurant.stateCode,
+      filingFrequency: restaurant.filingFrequency,
+      defaultGstScheme: restaurant.defaultGstScheme
+    };
   }
   if (!store.restaurants) store.restaurants = [];
-  const restaurant = { id, name: data.name, address: data.address || null };
+  const restaurant = {
+    id,
+    name: data.name,
+    address: data.address || null,
+    gstin: data.gstin || '',
+    legalName: data.legalName || '',
+    tradeName: data.tradeName || '',
+    state: data.state || '',
+    stateCode: data.stateCode || '',
+    filingFrequency: data.filingFrequency || 'monthly',
+    defaultGstScheme: data.defaultGstScheme || 'restaurant_5_no_itc'
+  };
   store.restaurants.push(restaurant);
   return restaurant;
 }
@@ -982,10 +1053,34 @@ async function getRestaurant(id) {
   if (useDb) {
     const row = await Restaurant.findOne({ id });
     if (!row) return null;
-    return { id: row.id, name: row.name, address: row.address };
+    return {
+      id: row.id,
+      name: row.name,
+      address: row.address,
+      gstin: row.gstin || '',
+      legalName: row.legalName || '',
+      tradeName: row.tradeName || '',
+      state: row.state || '',
+      stateCode: row.stateCode || '',
+      filingFrequency: row.filingFrequency || 'monthly',
+      defaultGstScheme: row.defaultGstScheme || 'restaurant_5_no_itc'
+    };
   }
   if (!store.restaurants) store.restaurants = [];
-  return store.restaurants.find(h => h.id === id) || null;
+  const r = store.restaurants.find(h => h.id === id);
+  if (!r) return null;
+  return {
+    id: r.id,
+    name: r.name,
+    address: r.address,
+    gstin: r.gstin || '',
+    legalName: r.legalName || '',
+    tradeName: r.tradeName || '',
+    state: r.state || '',
+    stateCode: r.stateCode || '',
+    filingFrequency: r.filingFrequency || 'monthly',
+    defaultGstScheme: r.defaultGstScheme || 'restaurant_5_no_itc'
+  };
 }
 
 async function updateRestaurant(id, data) {
@@ -994,8 +1089,26 @@ async function updateRestaurant(id, data) {
     if (!row) return null;
     if (data.name !== undefined) row.name = data.name;
     if (data.address !== undefined) row.address = data.address;
+    if (data.gstin !== undefined) row.gstin = data.gstin;
+    if (data.legalName !== undefined) row.legalName = data.legalName;
+    if (data.tradeName !== undefined) row.tradeName = data.tradeName;
+    if (data.state !== undefined) row.state = data.state;
+    if (data.stateCode !== undefined) row.stateCode = data.stateCode;
+    if (data.filingFrequency !== undefined) row.filingFrequency = data.filingFrequency;
+    if (data.defaultGstScheme !== undefined) row.defaultGstScheme = data.defaultGstScheme;
     await row.save();
-    return { id: row.id, name: row.name, address: row.address };
+    return {
+      id: row.id,
+      name: row.name,
+      address: row.address,
+      gstin: row.gstin || '',
+      legalName: row.legalName || '',
+      tradeName: row.tradeName || '',
+      state: row.state || '',
+      stateCode: row.stateCode || '',
+      filingFrequency: row.filingFrequency || 'monthly',
+      defaultGstScheme: row.defaultGstScheme || 'restaurant_5_no_itc'
+    };
   }
   if (!store.restaurants) store.restaurants = [];
   const idx = store.restaurants.findIndex(h => h.id === id);
@@ -1607,17 +1720,33 @@ async function listPurchaseBills(restaurantId) {
       id: r.id,
       restaurantId: r.restaurantId,
       supplierName: r.supplierName,
+      supplierGstin: r.supplierGstin || '',
       billNumber: r.billNumber,
       date: r.date,
       items: r.items || [],
       totalAmount: r.totalAmount,
+      taxableAmount: r.taxableAmount || r.totalAmount,
+      cgst: r.cgst || 0,
+      sgst: r.sgst || 0,
+      igst: r.igst || 0,
+      isItcEligible: !!r.isItcEligible,
+      reverseCharge: !!r.reverseCharge,
       paymentMode: r.paymentMode,
       status: r.status,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt
     }));
   }
-  return (store.purchaseBills || []).filter(p => !restaurantId || p.restaurantId === restaurantId);
+  return (store.purchaseBills || []).filter(p => !restaurantId || p.restaurantId === restaurantId).map(p => ({
+    ...p,
+    supplierGstin: p.supplierGstin || '',
+    taxableAmount: p.taxableAmount || p.totalAmount,
+    cgst: p.cgst || 0,
+    sgst: p.sgst || 0,
+    igst: p.igst || 0,
+    isItcEligible: !!p.isItcEligible,
+    reverseCharge: !!p.reverseCharge
+  }));
 }
 
 async function createPurchaseBill(data) {
@@ -1629,10 +1758,17 @@ async function createPurchaseBill(data) {
       id,
       restaurantId: data.restaurantId,
       supplierName: data.supplierName,
+      supplierGstin: data.supplierGstin || null,
       billNumber: data.billNumber || null,
       date: dateStr,
       items: data.items || [],
       totalAmount: data.totalAmount || 0,
+      taxableAmount: data.taxableAmount !== undefined ? data.taxableAmount : data.totalAmount || 0,
+      cgst: data.cgst || 0,
+      sgst: data.sgst || 0,
+      igst: data.igst || 0,
+      isItcEligible: !!data.isItcEligible,
+      reverseCharge: !!data.reverseCharge,
       paymentMode: data.paymentMode || 'Cash',
       status: data.status || 'paid'
     });
@@ -1665,10 +1801,17 @@ async function createPurchaseBill(data) {
       id: bill.id,
       restaurantId: bill.restaurantId,
       supplierName: bill.supplierName,
+      supplierGstin: bill.supplierGstin,
       billNumber: bill.billNumber,
       date: bill.date,
       items: bill.items,
       totalAmount: bill.totalAmount,
+      taxableAmount: bill.taxableAmount,
+      cgst: bill.cgst,
+      sgst: bill.sgst,
+      igst: bill.igst,
+      isItcEligible: bill.isItcEligible,
+      reverseCharge: bill.reverseCharge,
       paymentMode: bill.paymentMode,
       status: bill.status,
       createdAt: bill.createdAt,
@@ -1681,10 +1824,17 @@ async function createPurchaseBill(data) {
     id,
     restaurantId: data.restaurantId,
     supplierName: data.supplierName,
+    supplierGstin: data.supplierGstin || null,
     billNumber: data.billNumber || null,
     date: dateStr,
     items: data.items || [],
     totalAmount: data.totalAmount || 0,
+    taxableAmount: data.taxableAmount !== undefined ? data.taxableAmount : data.totalAmount || 0,
+    cgst: data.cgst || 0,
+    sgst: data.sgst || 0,
+    igst: data.igst || 0,
+    isItcEligible: !!data.isItcEligible,
+    reverseCharge: !!data.reverseCharge,
     paymentMode: data.paymentMode || 'Cash',
     status: data.status || 'paid',
     createdAt: new Date().toISOString(),

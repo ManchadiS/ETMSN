@@ -20,6 +20,7 @@ const payoutsRouter = require('./routes/payouts');
 const wastageRouter = require('./routes/wastage');
 const recipesRouter = require('./routes/recipes');
 const bankTransactionsRouter = require('./routes/bankTransactions');
+const gstFilingRouter = require('./routes/gstFiling');
 
 const path = require('path');
 
@@ -62,6 +63,7 @@ app.use('/api/v1/payouts', payoutsRouter);
 app.use('/api/v1/wastage', wastageRouter);
 app.use('/api/v1/recipes', recipesRouter);
 app.use('/api/v1/bank-transactions', bankTransactionsRouter);
+app.use('/api/v1/gst-filing', gstFilingRouter);
 
 app.get('/', (req, res) => res.json({ status: 'ok' }));
 

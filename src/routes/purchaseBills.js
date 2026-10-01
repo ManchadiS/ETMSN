@@ -20,7 +20,7 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { restaurantId, supplierName, billNumber, date, items, totalAmount, paymentMode, status } = req.body;
+  const { restaurantId, supplierName, billNumber, date, items, totalAmount, paymentMode, status, supplierGstin, taxableAmount, cgst, sgst, igst, isItcEligible, reverseCharge } = req.body;
   
   if (!restaurantId) return res.status(400).json({ error: 'restaurantId is required' });
   if (!supplierName) return res.status(400).json({ error: 'supplierName is required' });
@@ -37,8 +37,15 @@ router.post('/', async (req, res) => {
       date,
       items,
       totalAmount,
+      taxableAmount,
+      cgst,
+      sgst,
+      igst,
+      isItcEligible,
+      reverseCharge,
       paymentMode,
-      status
+      status,
+      supplierGstin
     });
     res.status(201).json(bill);
   } catch (err) {
