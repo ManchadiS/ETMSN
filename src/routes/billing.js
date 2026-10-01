@@ -20,13 +20,25 @@ router.get('/:id/view', async (req, res) => {
   if (!b) return res.status(404).send('Billing not found');
   const restaurant = b.restaurantId ? await getRestaurant(b.restaurantId) : null;
   
-  const itemsHtml = (b.foodItems || []).map(item => `
+  const itemsHtml = (b.foodItems || []).map(item => {
+    const qty = Number(item.quantity) || 1;
+    const baseTotal = (Number(item.price) || 0) * qty;
+    let discAmt = 0;
+    if (Number(item.discount) > 0) {
+      discAmt = item.discountType === 'flat' ? Math.min(baseTotal, Number(item.discount)) : (baseTotal * Number(item.discount) / 100);
+    }
+    const netTotal = Math.max(0, baseTotal - discAmt);
+    const discLabel = Number(item.discount) > 0 
+      ? `<br><small style="color: #f87171; font-size: 0.75rem;">Disc: ${item.discount}${item.discountType === 'flat' ? '₹' : '%'} (-₹${discAmt.toFixed(2)})</small>` 
+      : '';
+    return `
     <div style="display: flex; justify-content: space-between; font-size: 0.95rem; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 8px;">
-      <span style="flex: 2; font-weight: 500; color: #fff;">${item.name}</span>
-      <span style="flex: 1; text-align: center; opacity: 0.7; color: #a1a1aa;">x${item.quantity}</span>
-      <span style="flex: 1; text-align: right; font-weight: 600; color: #34d399;">₹${(item.price * item.quantity).toFixed(2)}</span>
+      <span style="flex: 2; font-weight: 500; color: #fff;">${item.name}${discLabel}</span>
+      <span style="flex: 1; text-align: center; opacity: 0.7; color: #a1a1aa;">x${qty}</span>
+      <span style="flex: 1; text-align: right; font-weight: 600; color: #34d399;">₹${netTotal.toFixed(2)}</span>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   const htmlContent = `
 <!DOCTYPE html>

@@ -62,10 +62,16 @@ function formatBill(billing, restaurant) {
   const total = subtotal + cgst + sgst;
 
   const itemsText = (billing.foodItems || []).map(item => {
-    const qty = item.quantity || 1;
-    const itemTotal = ((item.price || 0) * qty).toFixed(2);
+    const qty = Number(item.quantity) || 1;
+    const baseTotal = (Number(item.price) || 0) * qty;
+    let discAmt = 0;
+    if (Number(item.discount) > 0) {
+      discAmt = item.discountType === 'flat' ? Math.min(baseTotal, Number(item.discount)) : (baseTotal * Number(item.discount) / 100);
+    }
+    const netTotal = Math.max(0, baseTotal - discAmt);
+    const discStr = Number(item.discount) > 0 ? ` (Disc: -₹${discAmt.toFixed(2)})` : '';
     const time = item.time ? ` (${item.time})` : '';
-    return `${item.name} x${qty} ₹${itemTotal}${time}`;
+    return `${item.name} x${qty} ₹${netTotal.toFixed(2)}${discStr}${time}`;
   }).join('\n') || 'No items';
 
   const discountPercent = Number(billing.discount || 0);
@@ -214,10 +220,16 @@ function createBillPdf(billing, restaurant) {
       y += rowHeight;
     } else {
       items.forEach((item, index) => {
-        const qty = item.quantity || 1;
+        const qty = Number(item.quantity) || 1;
         const price = Number(item.price || 0);
-        const itemTotal = price * qty;
-        const nameHeight = doc.heightOfString(item.name, { width: col.itemW - 16, fontSize: 10 });
+        const baseTotal = price * qty;
+        let discAmt = 0;
+        if (Number(item.discount) > 0) {
+          discAmt = item.discountType === 'flat' ? Math.min(baseTotal, Number(item.discount)) : (baseTotal * Number(item.discount) / 100);
+        }
+        const itemTotal = Math.max(0, baseTotal - discAmt);
+        const nameText = item.name + (Number(item.discount) > 0 ? ` [Disc: -₹${discAmt.toFixed(2)}]` : '');
+        const nameHeight = doc.heightOfString(nameText, { width: col.itemW - 16, fontSize: 10 });
         const rowHeight = Math.max(26, nameHeight + rowPad * 2);
 
         if (y + rowHeight > doc.page.height - 140) {
@@ -230,7 +242,7 @@ function createBillPdf(billing, restaurant) {
           doc.fillColor('#222222');
         }
 
-        doc.text(item.name, col.itemX + 10, y + rowPad, { width: col.itemW - 16 });
+        doc.text(nameText, col.itemX + 10, y + rowPad, { width: col.itemW - 16 });
         doc.text(String(qty), col.qtyX, y + rowPad, { width: col.qtyW, align: 'center' });
         doc.text(formatCurrency(price), col.priceX, y + rowPad, { width: col.priceW - 8, align: 'right' });
         doc.text(formatCurrency(itemTotal), col.totalX, y + rowPad, { width: col.totalW - 8, align: 'right' });
